@@ -1342,15 +1342,13 @@ int LuaSyncedCtrl::CreateUnitIkChain(lua_State* L)
 
 	if (lua_isnumber(L,2) && lua_isnumber(L,3) )
 	{
-	kinematikChainID=	unit->CreateIkChain( lua_tofloat(L,2), lua_tofloat(L,3));
-
-	//TOOD Create Units IK-Chain	
+	return unit->CreateIkChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));
 	}
 	
-	return kinematikChainID;
+	return 0;
 }
 
-//Gets Active, Goal, speed
+//Sets IKChainID, Active, Goal
 int LuaSyncedCtrl::SetUnitIkChain(lua_State* L)
 {
 	CheckAllowGameChanges(L);
@@ -1359,11 +1357,13 @@ int LuaSyncedCtrl::SetUnitIkChain(lua_State* L)
 		return 0;
 	}
 
-	if (lua_isboolean(L,2) 	&&	// Enabled
-		lua_isnumber(L,3) &&  lua_isnumber(L,4)	&&  lua_isnumber(L,5)) 
+	if (lua_isnumber(L,2) && lua_isboolean(L,3)) 
 	{
-		;
-	//TOOD Enable/Disable Units IK-Chain	
+		if (lua_isnumber(L,4)	&&  lua_isnumber(L,5) && lua_isnumber(L,6))	{
+			unit->SetIkChain(lua_tofloat(L,2),lua_toboolean(L,3),lua_tofloat(L,4),lua_tofloat(L,5),lua_tofloat(L,6));
+		}else{
+			unit->SetIkChain(lua_tofloat(L,2),lua_toboolean(L,3));	
+		}
 	}
 	
 	return 0;

@@ -504,12 +504,23 @@ void CUnit::PostLoad()
 
 float CUnit::CreateIkChain(float startPiece, float endPiece)
 {
-		IkChain* kinematIkChain= new IkChain(this, startPiece, endPiece);
+		IkChain* kinematIkChain= new IkChain(IkChains.size()+1, this, startPiece, endPiece);
 		this->IkChains.push_back(kinematIkChain);
 		return kinematIkChain->IkChainID;
 	
 }
 
+void CUnit::SetIkChain(float ID, bool Active){
+	IkChains[(int)ID].SetActive(Active);
+};
+
+void CUnit::SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ){
+	IkChains[(int)ID].SetActive(Active);
+	IkChains[(int)ID].goalPoint[0]= goalX;
+	IkChains[(int)ID].goalPoint[1]= goalY;
+	IkChains[(int)ID].goalPoint[2]= goalZ;
+};
+	
 
 void CUnit::FinishedBuilding(bool postInit)
 {

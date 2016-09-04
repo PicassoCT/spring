@@ -30,11 +30,10 @@ public:
 	///Constructors 
 
 	//Create the segments
-	IkChain(CUnit* unit, float startPieceID, float endPieceID);
+	IkChain(int id, CUnit* unit, LocalModel* startPiece, float startPieceID, float endPieceID);
 
 	//Helper Function to inialize the Path recursive
 	bool recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
-
 
 	//IK is active or paused
 	bool IKActive ;

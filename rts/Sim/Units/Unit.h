@@ -7,12 +7,14 @@
 #include <string>
 
 #include "Sim/Objects/SolidObject.h"
-#include "IkChain.h"
+
 #include "Sim/Misc/Resource.h"
 #include "Sim/Weapons/WeaponTarget.h"
 #include "System/Matrix44f.h"
 #include "System/type2.h"
+#include <Eigen/Dense>
 
+#include "IkChain.h"
 
 class CPlayer;
 class CCommandAI;
@@ -92,7 +94,9 @@ public:
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
 	
-	float CreateIkChain(float startPiece, float endPiece);
+	float CreateIkChain(LocalModel* startPiece, float startPieceID, float endPieceID);
+	void SetIkChain(float ID, bool Active);
+	void SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ);
 
 	void ApplyImpulse(const float3& impulse);
 
