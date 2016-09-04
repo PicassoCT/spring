@@ -8,6 +8,7 @@
 #include "UnitTypes/Building.h"
 #include "Scripts/NullUnitScript.h"
 #include "Scripts/UnitScriptFactory.h"
+#include "IkChain.h"
 #include "Scripts/CobInstance.h" // for TAANG2RAD
 
 #include "CommandAI/CommandAI.h"
@@ -244,7 +245,13 @@ CUnit::~CUnit()
 	SafeDelete(commandAI);
 	SafeDelete(moveType);
 	SafeDelete(prevMoveType);
-
+	
+	//delete all existing IK-Chains
+	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
+		delete *ik;
+	}
+	
+	
 	// ScriptCallback may reference weapons, so delete the script first
 	for (auto wi = weapons.cbegin(); wi != weapons.cend(); ++wi) {
 		delete *wi;
@@ -494,6 +501,15 @@ void CUnit::PostLoad()
 
 //////////////////////////////////////////////////////////////////////
 //
+
+float CUnit::CreateIkChain(float startPiece, float endPiece)
+{
+		IkChain* kinematIkChain= new IkChain(this, startPiece, endPiece);
+		this->IkChains.push_back(kinematIkChain);
+		return kinematIkChain->IkChainID;
+	
+}
+
 
 void CUnit::FinishedBuilding(bool postInit)
 {

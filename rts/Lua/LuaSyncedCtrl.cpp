@@ -170,6 +170,9 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(DestroyFeature);
 	REGISTER_LUA_CFUNC(TransferFeature);
 
+	REGISTER_LUA_CFUNC(SetUnitIkChain);
+	REGISTER_LUA_CFUNC(CreateUnitIkChain);
+	REGISTER_LUA_CFUNC(SetUnitIKPieceLimits);
 	REGISTER_LUA_CFUNC(SetUnitCosts);
 	REGISTER_LUA_CFUNC(SetUnitResourcing);
 	REGISTER_LUA_CFUNC(SetUnitTooltip);
@@ -692,6 +695,7 @@ int LuaSyncedCtrl::KillTeam(lua_State* L)
 	team->Died();
 	return 0;
 }
+
 
 int LuaSyncedCtrl::AssignPlayerToTeam(lua_State* L)
 {
@@ -1326,6 +1330,65 @@ int LuaSyncedCtrl::TransferUnit(lua_State* L)
 
 
 /******************************************************************************/
+//Gets UnitID, startPiece, endPiece
+int LuaSyncedCtrl::CreateUnitIkChain(lua_State* L)
+{
+	CheckAllowGameChanges(L);
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	float kinematikChainID = 0;
+	if (unit == NULL) {
+		return 0;
+	}
+
+	if (lua_isnumber(L,2) && lua_isnumber(L,3) )
+	{
+	kinematikChainID=	unit->CreateIkChain( lua_tofloat(L,2), lua_tofloat(L,3));
+
+	//TOOD Create Units IK-Chain	
+	}
+	
+	return kinematikChainID;
+}
+
+//Gets Active, Goal, speed
+int LuaSyncedCtrl::SetUnitIkChain(lua_State* L)
+{
+	CheckAllowGameChanges(L);
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	if (unit == NULL) {
+		return 0;
+	}
+
+	if (lua_isboolean(L,2) 	&&	// Enabled
+		lua_isnumber(L,3) &&  lua_isnumber(L,4)	&&  lua_isnumber(L,5)) 
+	{
+		;
+	//TOOD Enable/Disable Units IK-Chain	
+	}
+	
+	return 0;
+}
+
+//Sets the Pieces Limitation regarding 
+int LuaSyncedCtrl::SetUnitIKPieceLimits(lua_State* L)
+{
+	CheckAllowGameChanges(L);
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	if (unit == NULL) {
+		return 0;
+	}
+
+	if (lua_isnumber(L,2) && //Piecenumber
+		//IK-Node Limitations
+		lua_isnumber(L,3) &&  lua_isnumber(L,4) && lua_isnumber(L,5)) 
+	{
+		
+		//TOOD Set IK-Node
+	}
+	
+	return 0;
+}
+
 
 int LuaSyncedCtrl::SetUnitCosts(lua_State* L)
 {

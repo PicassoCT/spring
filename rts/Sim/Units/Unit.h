@@ -7,6 +7,7 @@
 #include <string>
 
 #include "Sim/Objects/SolidObject.h"
+#include "IkChain.h"
 #include "Sim/Misc/Resource.h"
 #include "Sim/Weapons/WeaponTarget.h"
 #include "System/Matrix44f.h"
@@ -22,6 +23,9 @@ class CWeapon;
 class CUnitScript;
 class DamageArray;
 class DynDamageArray;
+class IkChain;
+class Segment;
+
 struct SolidObjectDef;
 struct UnitDef;
 struct UnitTrackStruct;
@@ -87,6 +91,8 @@ public:
 	virtual void DoDamage(const DamageArray& damages, const float3& impulse, CUnit* attacker, int weaponDefID, int projectileID);
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
+	
+	float CreateIkChain(float startPiece, float endPiece);
 
 	void ApplyImpulse(const float3& impulse);
 
@@ -251,7 +257,9 @@ public:
 	const UnitDef* unitDef;
 
 	std::vector<CWeapon*> weapons;
-
+	///IK-Chains of the various Bones
+	std::vector<IkChain*> IkChains;
+	
 	/// Our shield weapon, NULL if we have none
 	CWeapon* shieldWeapon;
 	/// Our weapon with stockpiled ammo, NULL if we have none
