@@ -12,7 +12,6 @@
 #include "Sim/Weapons/WeaponTarget.h"
 #include "System/Matrix44f.h"
 #include "System/type2.h"
-#include <Eigen/Dense>
 
 #include "IkChain.h"
 
@@ -34,7 +33,7 @@ struct UnitTrackStruct;
 struct UnitLoadParams;
 struct SLosInstance;
 
-
+using namespace Eigen;
 namespace icon {
 	class CIconData;
 }

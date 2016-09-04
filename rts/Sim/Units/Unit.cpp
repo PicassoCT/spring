@@ -8,7 +8,6 @@
 #include "UnitTypes/Building.h"
 #include "Scripts/NullUnitScript.h"
 #include "Scripts/UnitScriptFactory.h"
-#include "IkChain.h"
 #include "Scripts/CobInstance.h" // for TAANG2RAD
 
 #include "CommandAI/CommandAI.h"
@@ -504,10 +503,9 @@ void CUnit::PostLoad()
 
 float CUnit::CreateIkChain(float startPiece, float endPiece)
 {
-		IkChain* kinematIkChain= new IkChain(IkChains.size()+1, this, startPiece, endPiece);
-		this->IkChains.push_back(kinematIkChain);
-		return kinematIkChain->IkChainID;
-	
+	IkChain* kinematIkChain= new IkChain(IkChains.size()+1, this, startPiece, endPiece);
+	this->IkChains.push_back(kinematIkChain);
+	return kinematIkChain->IkChainID;	
 }
 
 void CUnit::SetIkChain(float ID, bool Active){

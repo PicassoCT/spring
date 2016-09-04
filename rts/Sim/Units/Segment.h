@@ -5,10 +5,7 @@
 #define SEGMENT
 
 #include <vector>
-#include <Eigen/Dense>
-
-using namespace Eigen;
-
+#include "point3f.h"
 
 typedef enum {
     BALLJOINT
@@ -26,29 +23,29 @@ private:
         AngleAxisf T, saved_T, last_T;
 
         // save the angle when computing the changes
-        Vector3f saved_angle;
+        Point3f saved_angle;
 
         // the type of joint the origin of the segment is
         // connected to
         JointType joint;
 
-        Vector3f nextStartPoint;
+        Point3f nextStartPoint;
 
         //UnitOrigin Position
-        Vector3f pUnitPiece;
+        Point3f pUnitPiece;
         
     public:
         // constructors
         Segment(float magnitude, JointType jt);
-      	Segment(Vector3f nextStartPointOffset, JointType jt);
+      	Segment(Point3f nextStartPointOffset, JointType jt);
         ~Segment();
 
         // returns end point in object space
-        Vector3f get_end_point();
+        Point3f get_end_point();
 
-        Vector3f get_right();
-        Vector3f get_up();
-        Vector3f get_z();
+        Point3f get_right();
+        Point3f get_up();
+        Point3f get_z();
 
         AngleAxisf get_T();
         float get_mag();
@@ -59,7 +56,7 @@ private:
         void save_last_transformation();
         void load_last_transformation();
 
-        void apply_angle_change(float rad_change, Vector3f angle);
+        void apply_angle_change(float rad_change, Point3f angle);
 
         // clear transformations
         void reset();

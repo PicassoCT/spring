@@ -5,7 +5,7 @@
 
 
 //Intialize the Segment - TODO at last Segment, hand over maxsize of segment
-Segment::Segment(Vector3f nextStartPoint, JointType jt) {
+Segment::Segment(Point3f nextStartPoint, JointType jt) {
 	T = T.Identity();
 
 	nextStartPoint[0]= pUnitPiece[0] - nextStartPoint[0];
@@ -32,29 +32,29 @@ Segment::~Segment() {
 
 }
 
-Vector3f Segment::get_end_point() {
+Point3f Segment::get_end_point() {
     // start with vector going into the Z direction
     // transform into the rotation of the segment
 
-    return T * Vector3f(0, 0, mag);
+    return T * Point3f(0, 0, mag);
 }
 
 ///Gets the X-Component-  Pitch
-Vector3f Segment::get_right() {
-    return T*Vector3f(1,0,0);
+Point3f Segment::get_right() {
+    return T*Point3f(1,0,0);
 }
 
 ///Gets the Y-Component - Yaw
 
-Vector3f Segment::get_up() {
-    return T*Vector3f(0,1,0);
+Point3f Segment::get_up() {
+    return T*Point3f(0,1,0);
 }
 
 
 ///Gets the Z-Component -Roll
 
-Vector3f Segment::get_z() {
-    return T*Vector3f(0,0,1);
+Point3f Segment::get_z() {
+    return T*Point3f(0,0,1);
 }
 
 
@@ -83,7 +83,7 @@ void Segment::load_transformation() {
     T = saved_T;
 }
 
-void Segment::apply_angle_change(float rad_change, Vector3f angle) {
+void Segment::apply_angle_change(float rad_change, Point3f angle) {
     T = AngleAxisf(rad_change, angle) * T;
 }
 

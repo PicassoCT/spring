@@ -16,7 +16,7 @@ void IkChain::SetActive(bool isActive)
 //recursive explore the model and find the end of the IK-Chain
 bool IkChain::recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece, int endPieceNumber, int depth){
     //Get DecendantsNumber
-    /*
+   
       for (auto piece = parentLocalModel.pieces.begin(); piece !=  parentLocalModel.pieces.end(); ++piece) 
         {
             pieceIndex= NULL;
@@ -35,38 +35,38 @@ bool IkChain::recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece,
             {
                 //Get the magnitude of the piece
                 float3 vecMag= parentLocalModel->GetAbsolutePos - lmp->GetAbsolutePos();
-                Vector3f nextStartPointOffset (vecMag.x, vecMag.y, vecMag.z);
+                Point3f nextStartPointOffset (vecMag.x, vecMag.y, vecMag.z);
                 segments[depth]= *(new Segment( nextStartPointOffset, BALLJOINT));  
                 return lmp->scriptPieceIndex;        
             }
 
         }
-        */
+       
 return false;
 }
 
 
-bool IkChain::initializePiecePath(int startPiece, int endPiece){
-/*
+bool IkChain::initializePiecePath(LocalModel* startPiece, int startPieceID, int endPieceID){
     //Check for 
      if (startPiece  == NULL || endPiece == NULL ) return false;
     //TODO check wether start and Endpiece exist
 
     IKActive= true;
-    
-    LocalModelPiece* startPiece =  ParseObjectLocalModelPiece(unit, startPiece);
- 
+
+
     return recPiecePathExplore(startPiece, startPiece, endPiece, 0));
-*/
+
 return false;
 }
 
 
-IkChain::IkChain(CUnit* unit, float startPiece, float endPiece )
+IkChain::IkChain(int id, CUnit* unit, LocalModel* startPiece, float startPieceID, float endPiece )
 {
 	this->unit= unit;
 
-    initializePiecePath((int) startPiece;, (int) endPiece;);
+    initializePiecePath(startPiece, (int) startPieceID;, (int) endPiece;);
+
+    IkChainID = id;
 }
 
 IkChain::~IkChain()
@@ -91,7 +91,7 @@ std::numeric_limits<double>::epsilon())
 //////////////////////////////////////////////////////////////////////
 float IkChain::getMaxLength(){
 	float totalDistance=0;
-	Vector3f lastEndPoint= Vector3f(0,0,0);
+	Point3f lastEndPoint= Point3f(0,0,0);
 
     for(std::vector<Segment>::iterator seg = segments.begin(); seg != segments.end(); ++seg)
     {
@@ -105,12 +105,12 @@ return NULL;
 
 
 
-void IkChain::solve(Vector3f goal_point, int life_count) {
+void IkChain::solve(Point3f goal_point, int life_count) {
     // prev and curr are for use of halving
     // last is making sure the iteration gets a better solution than the last iteration,
     // otherwise revert changes
     float prev_err, curr_err, last_err = 9999;
-    Vector3f current_point;
+    Point3f current_point;
     int max_iterations = 200;
     int count = 0;
     float err_margin = 0.01;
@@ -130,7 +130,7 @@ void IkChain::solve(Vector3f goal_point, int life_count) {
     // while the current point is close enough, stop iterating
     while (curr_err > err_margin) {
         // calculate the difference between the goal_point and current_point
-        Vector3f dP = goal_point - current_point;
+        Point3f dP = goal_point - current_point;
 
         // create the jacovian
         int segment_size = segments.size();
@@ -266,8 +266,8 @@ void IkChain::solve(Vector3f goal_point, int life_count) {
 
 
 // computes end_effector up to certain number of segments
-Vector3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
-    Vector3f ret;
+Point3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
+    Point3f ret;
 
     int segment_num_to_calc = segment_num;
     // if default value, compute total end effector
@@ -288,13 +288,13 @@ Vector3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
 
 
 //Returns a Jacovian Segment a row of 3 Elements
-Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f goalPoint, Vector3f angle) 
+Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Point3f goalPoint, Point3f angle) 
 {
     Segment s = segments[seg_num];
     // mini is the amount of angle you go in the direction for numerical calculation
     float mini = 0.0005;
 
-    Vector3f transformed_goal = goalPoint;
+    Point3f transformed_goal = goalPoint;
     for(int i=segments.size()-1; i>seg_num; i--) {
         // transform the goal point to relevence to this segment
         // by removing all the transformations the segments afterwards
@@ -302,7 +302,7 @@ Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f goa
         transformed_goal -= segments[i].get_end_point();
     }
 
-    Vector3f my_end_effector = calculate_end_effector(seg_num);
+    Point3f my_end_effector = calculate_end_effector(seg_num);
 
     // transform them both to the origin
     if (seg_num-1 >= 0) {
@@ -311,7 +311,7 @@ Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f goa
     }
 
     // original end_effector
-    Vector3f original_ee = calculate_end_effector();
+    Point3f original_ee = calculate_end_effector();
 
     // angle input is the one you rotate around
     // remove all the rotations from the previous segments by applying them
@@ -320,14 +320,14 @@ Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f goa
     // transform the segment by some delta(theta)
     s.transform(t);
     // new end_effector
-    Vector3f new_ee = calculate_end_effector();
+    Point3f new_ee = calculate_end_effector();
     // reverse the transformation afterwards
     s.transform(t.inverse());
 
         // difference between the end_effectors
     // since mini is very small, it's an approximation of
     // the derivative when divided by mini
-    Vector3f diff = new_ee - original_ee;
+    Point3f diff = new_ee - original_ee;
 
     // return the row of dx/dtheta, dy/dtheta, dz/dtheta
     Matrix<float, 1, 3> ret;
@@ -335,8 +335,8 @@ Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f goa
     return ret;
 }
 // computes end_effector up to certain number of segments
-Vector3f IkChain::calculateEndEffector(int segment_num /* = -1 */) {
-    Vector3f ret;
+Point3f IkChain::calculateEndEffector(int segment_num /* = -1 */) {
+    Point3f ret;
 
     int segment_num_to_calc = segment_num;
     // if default value, compute total end effector
