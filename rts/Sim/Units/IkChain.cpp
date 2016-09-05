@@ -14,16 +14,15 @@ void IkChain::SetActive(bool isActive)
 }
 
 //recursive explore the model and find the end of the IK-Chain
-bool IkChain::recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece, int endPieceNumber, int depth){
+bool IkChain::recPiecePathExplore(LocalModelPiece* parentLocalModelPiece, int parentPiece, int endPieceNumber, int depth){
     //Get DecendantsNumber
    
-      for (auto piece = parentLocalModel.pieces.begin(); piece !=  parentLocalModel.pieces.end(); ++piece) 
+      for (auto piece = parentLocalModelpiece.children.begin(); piece !=  parentLocalModelpiece.children.end(); ++piece) 
         {
-            pieceIndex= NULL;
-            const LocalModelPiece* lmp = parentLocalModel.GetPiece(n);
+        
             
             //we found the last piece of the kinematikChain
-            if (lmp->scriptPieceIndex == endPieceNumber){
+            if (piece->scriptPieceIndex == endPieceNumber){
                 //lets gets size as a float
 
                 segments[depth]= *(new Segment( magnitude, BALLJOINT));
@@ -31,13 +30,13 @@ bool IkChain::recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece,
             }
             
             //if one of the pieces children is the endpiece backtrack
-            if (recPiecePathExplore(lmp,lmp->scriptPieceIndex , endPieceNumber, depth+1 ) == true)
+            if (recPiecePathExplore(piece,piece->scriptPieceIndex , endPieceNumber, depth+1 ) == true)
             {
                 //Get the magnitude of the piece
                 float3 vecMag= parentLocalModel->GetAbsolutePos - lmp->GetAbsolutePos();
                 Point3f nextStartPointOffset (vecMag.x, vecMag.y, vecMag.z);
                 segments[depth]= *(new Segment( nextStartPointOffset, BALLJOINT));  
-                return lmp->scriptPieceIndex;        
+                return piece->scriptPieceIndex;        
             }
 
         }
@@ -46,7 +45,7 @@ return false;
 }
 
 
-bool IkChain::initializePiecePath(LocalModel* startPiece, int startPieceID, int endPieceID){
+bool IkChain::initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID){
     //Check for 
      if (startPiece  == NULL || endPiece == NULL ) return false;
     //TODO check wether start and Endpiece exist
@@ -54,13 +53,13 @@ bool IkChain::initializePiecePath(LocalModel* startPiece, int startPieceID, int 
     IKActive= true;
 
 
-    return recPiecePathExplore(startPiece, startPiece, endPiece, 0));
+    return recPiecePathExplore(startPiece, startPieceID, endPieceID, 0));
 
 return false;
 }
 
 
-IkChain::IkChain(int id, CUnit* unit, LocalModel* startPiece, float startPieceID, float endPiece )
+IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, float startPieceID, float endPiece )
 {
 	this->unit= unit;
 

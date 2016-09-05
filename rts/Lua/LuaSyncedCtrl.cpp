@@ -1342,7 +1342,12 @@ int LuaSyncedCtrl::CreateUnitIkChain(lua_State* L)
 
 	if (lua_isnumber(L,2) && lua_isnumber(L,3) )
 	{
-	return unit->CreateIkChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));
+	LocalModelPiece* startPiece = ParseObjectLocalModelPiece(L, unit, 2); 
+
+		if (startPiece != NULL)
+		{
+			return unit->CreateIkChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));
+		}
 	}
 	
 	return 0;

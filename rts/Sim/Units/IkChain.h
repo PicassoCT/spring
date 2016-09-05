@@ -14,7 +14,7 @@
 using namespace std;
 
 #include "Segment.h"
-//#include "Rendering/Models/3DModel.h"
+#include "Rendering/Models/3DModel.h"
 
 
 
@@ -29,10 +29,10 @@ public:
 	///Constructors 
 
 	//Create the segments
-	IkChain(int id, CUnit* unit, LocalModel* startPiece, float startPieceID, float endPieceID);
+	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, float startPieceID, float endPieceID);
 
 	//Helper Function to inialize the Path recursive
-	bool recPiecePathExplore(LocalModel* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
+	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
 
 	//IK is active or paused
 	bool IKActive ;

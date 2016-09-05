@@ -13,7 +13,7 @@
 #include "System/Matrix44f.h"
 #include "System/type2.h"
 
-#include "IkChain.h"
+
 
 class CPlayer;
 class CCommandAI;
@@ -33,7 +33,7 @@ struct UnitTrackStruct;
 struct UnitLoadParams;
 struct SLosInstance;
 
-using namespace Eigen;
+
 namespace icon {
 	class CIconData;
 }
@@ -93,7 +93,7 @@ public:
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
 	
-	float CreateIkChain(LocalModel* startPiece, float startPieceID, float endPieceID);
+	float CreateIkChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID);
 	void SetIkChain(float ID, bool Active);
 	void SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ);
 
