@@ -64,6 +64,7 @@
 #include "System/Sync/SyncedPrimitive.h"
 #include "System/Sync/SyncTracer.h"
 #include "System/Util.h"
+#include "IkChain.h"
 
 
 // See end of source for member bindings
@@ -247,9 +248,9 @@ CUnit::~CUnit()
 	SafeDelete(prevMoveType);
 	
 	//delete all existing IK-Chains
-	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
-		delete *ik;
-	}
+	//for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
+	//	save_delete(IkChains[ik]);
+	//} TODO Coment back in
 	
 	
 	// ScriptCallback may reference weapons, so delete the script first
@@ -503,20 +504,27 @@ void CUnit::PostLoad()
 
 float CUnit::CreateIkChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
 {
+	/*
 	IkChain* kinematIkChain= new IkChain((int)IkChains.size()+1, this, startPiece, startPieceID, endPieceID);
 	this->IkChains.push_back(kinematIkChain);
 	return kinematIkChain->IkChainID;	
+	*/
+	return 1.0;
 }
 
 void CUnit::SetIkChain(float ID, bool Active){
+	/*
 	IkChains[(int)ID]->SetActive(Active);
+	*/
 };
 
 void CUnit::SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ){
+/*
 	IkChains[(int)ID]->SetActive(Active);
 	IkChains[(int)ID]->goalPoint[0]= goalX;
 	IkChains[(int)ID]->goalPoint[1]= goalY;
 	IkChains[(int)ID]->goalPoint[2]= goalZ;
+	*/
 };
 	
 

@@ -10,25 +10,25 @@
 #endif
 
 #include <vector>
-#include "point3f.h"
-using namespace std;
-
 #include "Segment.h"
-#include "Rendering/Models/3DModel.h"
+#include "point3f.h"
 
+//#include "Rendering/Models/3DModel.h"
+using namespace Eigen;
 
-
-class CUnit;
-class Segment;
+class LocalModelPiece;
 class LocalModel;
+class CUnit;
+
 ///Class Ikchain- represents a Inverse Kinmatik Chain
 class IkChain
 {
 
 public:
 	///Constructors 
-
+	IkChain();
 	//Create the segments
+
 	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, float startPieceID, float endPieceID);
 
 	//Helper Function to inialize the Path recursive
@@ -36,6 +36,8 @@ public:
 
 	//IK is active or paused
 	bool IKActive ;
+
+	//Setter
 	void SetActive (bool isActive);
 
 	//Get the Next PieceNumber while building the chain
@@ -67,6 +69,7 @@ public:
 	//Solves the Inverse Kinematik Chain
 	void solve(Point3f goal_point, int life_count);
 
+	//Destructor
 	~IkChain();
 private:
 

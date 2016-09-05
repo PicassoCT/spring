@@ -7,7 +7,6 @@
 #include <string>
 
 #include "Sim/Objects/SolidObject.h"
-
 #include "Sim/Misc/Resource.h"
 #include "Sim/Weapons/WeaponTarget.h"
 #include "System/Matrix44f.h"
@@ -25,7 +24,7 @@ class CUnitScript;
 class DamageArray;
 class DynDamageArray;
 class IkChain;
-class Segment;
+
 
 struct SolidObjectDef;
 struct UnitDef;

@@ -52,10 +52,7 @@ bool IkChain::initializePiecePath(LocalModelPiece* startPiece, int startPieceID,
 
     IKActive= true;
 
-
     return recPiecePathExplore(startPiece, startPieceID, endPieceID, 0));
-
-return false;
 }
 
 
