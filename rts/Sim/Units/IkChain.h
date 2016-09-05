@@ -40,6 +40,10 @@ public:
 	//Setter
 	void SetActive (bool isActive);
 
+	//Solves the Inverse Kinematik Chain for a new goal point
+	void solve(float frames );
+
+
 	//Get the Next PieceNumber while building the chain
 	int GetNextPieceNumber(float PieceNumber);
 
@@ -66,8 +70,6 @@ public:
 	//Vector containing the Segments
 	std::vector <Segment> segments;
 
-	//Solves the Inverse Kinematik Chain
-	void solve(Point3f goal_point, int life_count);
 
 	//Destructor
 	~IkChain();

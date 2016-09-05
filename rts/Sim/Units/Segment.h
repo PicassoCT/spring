@@ -8,7 +8,8 @@
 #include "point3f.h"
 
 typedef enum {
-    BALLJOINT
+    BALLJOINT,
+    MONOJOINT
 } JointType;
 
 
@@ -39,6 +40,10 @@ private:
         Segment(float magnitude, JointType jt);
       	Segment(Point3f nextStartPointOffset, JointType jt);
         ~Segment();
+
+        Point3f currentSpeed;
+        Point3f acceleration;
+        Point3f speedMaximum;
 
         // returns end point in object space
         Point3f get_end_point();

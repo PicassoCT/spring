@@ -5,7 +5,6 @@
 
 #include <vector>
 #include <string>
-
 #include "Sim/Objects/SolidObject.h"
 #include "Sim/Misc/Resource.h"
 #include "Sim/Weapons/WeaponTarget.h"

@@ -1,6 +1,6 @@
 
 #include "IkChain.h"
-
+//#include "point3f.h"
 
 
 // See end of source for member bindings
@@ -99,9 +99,8 @@ float IkChain::getMaxLength(){
 return NULL;
 };
 
-
-
-void IkChain::solve(Point3f goal_point, int life_count) {
+//TODO need max Speed per Segment and a diffrent Joint Type with Limited Rotation
+void IkChain::solve(float frames) {
     // prev and curr are for use of halving
     // last is making sure the iteration gets a better solution than the last iteration,
     // otherwise revert changes
@@ -110,6 +109,8 @@ void IkChain::solve(Point3f goal_point, int life_count) {
     int max_iterations = 200;
     int count = 0;
     float err_margin = 0.01;
+
+    Point3f goal_point = goalPoint;
 
     goal_point -= base;
     if (goal_point.norm() > getMaxLength()) {

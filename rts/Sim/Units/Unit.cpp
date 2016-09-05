@@ -874,6 +874,16 @@ void CUnit::Update()
 	if (isDead)
 		return;
 
+	//Solve aktive Kinmatik Chains
+	if (IkChains.size()> 0){
+			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
+				IkChain* ikChain =(*ik); 
+				if (ikChain->IKActive == true) {
+					ikChain->solve(15.0);	//TODO replce fixed framenumber	
+				}
+			}
+	}
+
 	for (TransportedUnit& tu: transportedUnits) {
 		CUnit* transportee = tu.unit;
 		int piece = tu.piece;
