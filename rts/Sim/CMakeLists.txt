@@ -109,6 +109,8 @@ add_library(engineSim STATIC
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/Scripts/UnitScriptEngine.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/Scripts/UnitScriptFactory.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/Unit.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Units/IkChain.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/Units/Segment.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/UnitDef.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/UnitDefHandler.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Units/UnitHandler.cpp"

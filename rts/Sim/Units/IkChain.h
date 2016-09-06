@@ -13,7 +13,6 @@
 #include "Segment.h"
 #include "point3f.h"
 
-//#include "Rendering/Models/3DModel.h"
 using namespace Eigen;
 
 class LocalModelPiece;
@@ -33,7 +32,7 @@ public:
 
 	//Helper Function to inialize the Path recursive
 	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
-
+	bool initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID);
 	//IK is active or paused
 	bool IKActive ;
 

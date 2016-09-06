@@ -879,7 +879,7 @@ void CUnit::Update()
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
 				if (ikChain->IKActive == true) {
-					ikChain->solve(15.0);	//TODO replce fixed framenumber	
+					ikChain->solve(15.0f);	//TODO replce fixed framenumber	
 				}
 			}
 	}
