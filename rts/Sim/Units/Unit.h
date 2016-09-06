@@ -91,9 +91,12 @@ public:
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
 	
-	float CreateIkChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID);
-	void SetIkChain(float ID, bool Active);
-	void SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ);
+	float CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID);
+	void SetIKActive(float ikID, bool Active);
+	void SetIKGoal(float ikID, float goalX, float goalY, float goalZ);
+	void SetIKPieceSpeed(float ikID, float pieceID, float velX, float velY, float velZ);
+	void SetIKPieceLimit(float ikID, float pieceID, float limX, float limY, float limZ);
+
 
 	void ApplyImpulse(const float3& impulse);
 

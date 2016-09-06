@@ -502,31 +502,43 @@ void CUnit::PostLoad()
 
 //////////////////////////////////////////////////////////////////////
 
-float CUnit::CreateIkChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
+float CUnit::CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
 {
-	/*
+
 	IkChain* kinematIkChain= new IkChain((int)IkChains.size()+1, this, startPiece, startPieceID, endPieceID);
 	this->IkChains.push_back(kinematIkChain);
 	return kinematIkChain->IkChainID;	
-	*/
-	return 1.0;
+
 }
 
-void CUnit::SetIkChain(float ID, bool Active){
-	/*
-	IkChains[(int)ID]->SetActive(Active);
-	*/
+void CUnit::SetIKActive(float ikID, bool Active){
+	
+	IkChains[(int)ikID]->SetActive(Active);
+	
 };
 
-void CUnit::SetIkChain(float ID, bool Active, float goalX, float goalY, float goalZ){
-/*
-	IkChains[(int)ID]->SetActive(Active);
-	IkChains[(int)ID]->goalPoint[0]= goalX;
-	IkChains[(int)ID]->goalPoint[1]= goalY;
-	IkChains[(int)ID]->goalPoint[2]= goalZ;
-	*/
-};
+void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ){
+
+	IkChains[(int)ikID]->goalPoint[0]= goalX;
+	IkChains[(int)ikID]->goalPoint[1]= goalY;
+	IkChains[(int)ikID]->goalPoint[2]= goalZ;
 	
+};
+
+void CUnit::SetIKPieceSpeed(float ikID, float ikPieceID, float velX, float velY, float velZ){
+
+	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[0]= velX;
+	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[1]= velY;	
+	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[2]= velZ;
+};
+
+void CUnit::SetIKPieceLimit(float ikID, float ikPieceID, float limX, float limY, float limZ){
+
+	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[0]= limX;
+	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[1]= limY;	
+	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[2]= limZ;
+};
+
 
 void CUnit::FinishedBuilding(bool postInit)
 {

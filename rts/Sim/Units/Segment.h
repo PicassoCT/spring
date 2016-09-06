@@ -32,8 +32,8 @@ private:
 
         Point3f nextStartPoint;
 
-        //UnitOrigin Position
-        Point3f pUnitPiece;
+        //UnitOrigin Position always 0/0/0 in its own coord system
+        Point3f pPieceBaseUnit;
         
     public:
         // constructors
@@ -41,9 +41,9 @@ private:
       	Segment(Point3f nextStartPointOffset, JointType jt);
         ~Segment();
 
-        Point3f currentSpeed;
-        Point3f acceleration;
-        Point3f speedMaximum;
+        Point3f velocity;
+        Point3f angleLimits;
+ 
 
         // returns end point in object space
         Point3f get_end_point();

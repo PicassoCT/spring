@@ -8,9 +8,9 @@
 Segment::Segment(Point3f nextStartPoint, JointType jt) {
 	T = T.Identity();
 
-	nextStartPoint[0]= pUnitPiece[0] - nextStartPoint[0];
-	nextStartPoint[1]= pUnitPiece[1] - nextStartPoint[1];
-	nextStartPoint[2]= pUnitPiece[2] - nextStartPoint[2];
+	nextStartPoint[0]= pPieceBaseUnit[0] - nextStartPoint[0];
+	nextStartPoint[1]= pPieceBaseUnit[1] - nextStartPoint[1];
+	nextStartPoint[2]= pPieceBaseUnit[2] - nextStartPoint[2];
 
     //distance to next point - aka magnitude
     mag = sqrtf(nextStartPoint[0] * nextStartPoint[0] +

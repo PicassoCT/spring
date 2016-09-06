@@ -170,9 +170,12 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(DestroyFeature);
 	REGISTER_LUA_CFUNC(TransferFeature);
 
-	REGISTER_LUA_CFUNC(SetUnitIkChain);
-	REGISTER_LUA_CFUNC(CreateUnitIkChain);
+	REGISTER_LUA_CFUNC(CreateUnitIKChain);
+	REGISTER_LUA_CFUNC(SetUnitIKActive);
+	REGISTER_LUA_CFUNC(SetUnitIKGoal);
 	REGISTER_LUA_CFUNC(SetUnitIKPieceLimits);
+	REGISTER_LUA_CFUNC(SetUnitIKPieceSpeed);
+
 	REGISTER_LUA_CFUNC(SetUnitCosts);
 	REGISTER_LUA_CFUNC(SetUnitResourcing);
 	REGISTER_LUA_CFUNC(SetUnitTooltip);
@@ -1331,7 +1334,7 @@ int LuaSyncedCtrl::TransferUnit(lua_State* L)
 
 /******************************************************************************/
 //Gets UnitID, startPiece, endPiece
-int LuaSyncedCtrl::CreateUnitIkChain(lua_State* L)
+int LuaSyncedCtrl::CreateUnitIKChain(lua_State* L)
 {
 	CheckAllowGameChanges(L);
 	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
@@ -1346,15 +1349,14 @@ int LuaSyncedCtrl::CreateUnitIkChain(lua_State* L)
 
 		if (startPiece != NULL)
 		{
-			return unit->CreateIkChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));
+			return unit->CreateIKChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));
 		}
 	}
 	
 	return 0;
 }
 
-//Sets IKChainID, Active, Goal
-int LuaSyncedCtrl::SetUnitIkChain(lua_State* L)
+int LuaSyncedCtrl::SetUnitIKActive (lua_State* L)
 {
 	CheckAllowGameChanges(L);
 	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
@@ -1362,19 +1364,49 @@ int LuaSyncedCtrl::SetUnitIkChain(lua_State* L)
 		return 0;
 	}
 
-	if (lua_isnumber(L,2) && lua_isboolean(L,3)) 
+	if (lua_isnumber(L,2) && lua_isboolean(L,3)){
+			unit->SetIKActive(lua_tofloat(L,2),lua_toboolean(L,3));	
+			}
+}
+
+
+//Sets IKChainID, Active, Goal
+int LuaSyncedCtrl::SetUnitIKGoal(lua_State* L)
+{
+	CheckAllowGameChanges(L);
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	if (unit == NULL) {
+		return 0;
+	}
+
+	if (lua_isnumber(L,2) &&lua_isnumber(L,3)	&&  lua_isnumber(L,4) && lua_isnumber(L,5))
 	{
-		if (lua_isnumber(L,4)	&&  lua_isnumber(L,5) && lua_isnumber(L,6))	{
-			unit->SetIkChain(lua_tofloat(L,2),lua_toboolean(L,3),lua_tofloat(L,4),lua_tofloat(L,5),lua_tofloat(L,6));
-		}else{
-			unit->SetIkChain(lua_tofloat(L,2),lua_toboolean(L,3));	
-		}
+		unit->SetIKGoal(lua_tofloat(L,2),lua_tofloat(L,3),lua_tofloat(L,4),lua_tofloat(L,5));
 	}
 	
 	return 0;
 }
 
-//Sets the Pieces Limitation regarding 
+int LuaSyncedCtrl::SetUnitIKPieceSpeed(lua_State* L)
+{
+	CheckAllowGameChanges(L);
+	CUnit* unit = ParseUnit(L, __FUNCTION__, 1);
+	if (unit == NULL) {
+		return 0;
+	}
+
+	if (lua_isnumber(L,2) && //IkchainID
+		lua_isnumber(L,3) &&//PieceID
+		(lua_isnumber(L,4)	&&  lua_isnumber(L,5) && lua_isnumber(L,6)))
+		{
+			unit->SetIKPieceSpeed(lua_isnumber(L,2),lua_isnumber(L,3), lua_tofloat(L,4),lua_tofloat(L,5),lua_tofloat(L,6));
+		}
+
+	return 0;
+}
+
+
+//Sets the Pieces Limitation regarding what joint type it is 
 int LuaSyncedCtrl::SetUnitIKPieceLimits(lua_State* L)
 {
 	CheckAllowGameChanges(L);
@@ -1383,14 +1415,15 @@ int LuaSyncedCtrl::SetUnitIKPieceLimits(lua_State* L)
 		return 0;
 	}
 
-	if (lua_isnumber(L,2) && //Piecenumber
+	if (lua_isnumber(L,2) && //IkchainID
 		//IK-Node Limitations
-		lua_isnumber(L,3) &&  lua_isnumber(L,4) && lua_isnumber(L,5)) 
+		lua_isnumber(L,3)) //PieceIDs
 	{
-		
-		//TOOD Set IK-Node
-	}
-	
+		if (lua_isnumber(L,4) &&  lua_isnumber(L,5) && lua_isnumber(L,6)) //Limit
+		{
+			unit->SetIKPieceLimit(lua_isnumber(L,2),lua_isnumber(L,3), lua_tofloat(L,4),lua_tofloat(L,5),lua_tofloat(L,6));
+		}
+	}	
 	return 0;
 }
 
