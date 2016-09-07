@@ -38,8 +38,9 @@ private:
         
     public:
         // constructors
-        Segment(float magnitude, JointType jt);
-      	Segment(Point3f nextStartPointOffset, JointType jt);
+        Segment();
+        Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude, JointType jt);
+      	Segment(unsigned int pieceID, LocalModelPiece* lPiece, Point3f nextStartPointOffset, JointType jt);
         ~Segment();
 
         Point3f velocity;
@@ -48,7 +49,7 @@ private:
         //corresponding piece
         LocalModelPiece* piece;
         //yes, this is doubling (unchangeable) Information, but reducing pointeritis
-        float pieceID;
+        unsigned int pieceID;
  
 
         // returns end point in object space

@@ -249,11 +249,10 @@ CUnit::~CUnit()
 	SafeDelete(prevMoveType);
 	
 	//delete all existing IK-Chains
-	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
-		//SafeDelete(*ik); TODO Memory Inontinence, the thirst be big, the allocator be going
-		//the trousers be filling, the process be tanking
-	} 
-	
+	for (IkChain* ik: IkChains){
+		delete ik;
+	}
+
 	
 	// ScriptCallback may reference weapons, so delete the script first
 	for (auto wi = weapons.cbegin(); wi != weapons.cend(); ++wi) {
@@ -503,12 +502,13 @@ void CUnit::PostLoad()
 
 
 //////////////////////////////////////////////////////////////////////
+//Returns true if the ikID is found in this Unit
 
 bool CUnit::isValidIKChain(float ikID){
 	if (IkChains.empty()) return false;
-
+	
 	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
-			
+
 				if ((*ik)->IkChainID == ikID) {
 					return true;
 				}
@@ -544,7 +544,7 @@ IkChain* CUnit::getIKChain( float ikID)
 }
 
 //Create the IKChain and return the ikID
-float CUnit::CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
+float CUnit::CreateIKChain(LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID)
 {
 	ikIDPool+= 1;
 	IkChain* kinematIkChain= new IkChain((int)ikIDPool, this, startPiece, startPieceID, endPieceID);
@@ -559,6 +559,7 @@ void CUnit::SetIKActive(float ikID, bool Active){
 	
 	if (ik){
 		(*ik).SetActive(Active);
+		(*ik).GoalChanged=true;
 	}
 };
 
@@ -569,7 +570,8 @@ void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ){
 	if (ik){
 	(*ik).goalPoint[0]= goalX;
 	(*ik).goalPoint[1]= goalY;
-	(*ik).goalPoint[2]= goalZ;
+	(*ik).goalPoint[2]= goalZ;	
+	(*ik).GoalChanged =	true;
 	}
 };
 
@@ -952,7 +954,7 @@ void CUnit::Update()
 	if (IkChains.size()> 0){
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
-				if (ikChain->IKActive == true) {
+				if (ikChain->IKActive == true && ikChain->GoalChanged==true) {
 					ikChain->solve(15.0f);	//TODO replce fixed framenumber	
 				}
 			}

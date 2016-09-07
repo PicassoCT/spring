@@ -2,11 +2,20 @@
 #include "Rendering/Models/3DModel.h"
 //Constructor
 //We load into the Transformation Matrice the Identity Matrice
+//Intialize the Segment - TODO at last Segment, hand over maxsize of segment
+Segment::Segment() {
+    T = T.Identity();
+    //distance to next point - aka magnitude
+    mag = 0;
+    joint = BALLJOINT;
+}
 
 
 //Intialize the Segment - TODO at last Segment, hand over maxsize of segment
-Segment::Segment(Point3f nextStartPoint, JointType jt) {
+Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece, Point3f nextStartPoint, JointType jt) {
 	T = T.Identity();
+    this->pieceID= pieceID;
+    piece= lPiece;
 
 	nextStartPoint[0]= pPieceBaseUnit[0] - nextStartPoint[0];
 	nextStartPoint[1]= pPieceBaseUnit[1] - nextStartPoint[1];
@@ -20,8 +29,11 @@ Segment::Segment(Point3f nextStartPoint, JointType jt) {
 }
 
 //Intialize the Segment - TODO at last Segment, hand over maxsize of segment
-Segment::Segment(float magnitude, JointType jt) {
+Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  float magnitude, JointType jt) {
     T = T.Identity();
+    this->pieceID= pieceID;
+    piece= lPiece;
+
     //distance to next point - aka magnitude
     mag = magnitude;
     joint = jt;

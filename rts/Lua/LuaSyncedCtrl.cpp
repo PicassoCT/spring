@@ -1357,7 +1357,8 @@ int LuaSyncedCtrl::CreateUnitIKChain(lua_State* L){
 			return 0;	
 		}
 
-		return (int) unit->CreateIKChain(startPiece, lua_tofloat(L,2), lua_tofloat(L,3));	
+	lua_pushnumber(L,  unit->CreateIKChain(startPiece, startPiece->scriptPieceIndex, endPiece->scriptPieceIndex));
+	return 1;
 	}
 	
 	luaL_error(L, "CreateUnitIKChain has missing/ wrong arguments");	
@@ -1373,7 +1374,7 @@ int LuaSyncedCtrl::SetUnitIKActive (lua_State* L){
 		return 0;
 	}
 
-	if (lua_isnumber(L,2) && unit->isValidIKChain(lua_tofloat(L,2)) == false){
+	if (lua_isnumber(L,2) == false || unit->isValidIKChain(lua_tofloat(L,2)) == false){
 		luaL_error(L, "Invalid IK ID in SetUnitIKActive");	
 		return 0;
 	}
@@ -1401,10 +1402,11 @@ int LuaSyncedCtrl::SetUnitIKGoal(lua_State* L)
 	if (lua_isnumber(L,2) &&lua_isnumber(L,3)	&&  lua_isnumber(L,4) && lua_isnumber(L,5))
 	{
 		
-		if (unit->isValidIKChain(lua_isnumber(L,2)) == false){
-		luaL_error(L, "Invalid IK ID in SetUnitIKGoal");	
+	if (lua_isnumber(L,2) == false || unit->isValidIKChain(lua_tofloat(L,2)) == false){
+		luaL_error(L, "Invalid IK ID as #2 argument");	
 		return 0;
-		}
+	}
+
 
 		unit->SetIKGoal(lua_tofloat(L,2),lua_tofloat(L,3),lua_tofloat(L,4),lua_tofloat(L,5));
 		return 0;
@@ -1426,10 +1428,11 @@ int LuaSyncedCtrl::SetUnitIKPieceSpeed(lua_State* L)
 		(lua_isnumber(L,4) &&  lua_isnumber(L,5) && lua_isnumber(L,6)))
 		{
 			//check wether this is a correct ikID
-			if (unit->isValidIKChain(lua_tofloat(L,2)) == false) {
-				luaL_error(L, "Invalid IK ID in SetUnitIKPieceSpeed");	
+			if (unit->isValidIKChain(lua_tofloat(L,2)) == false){
+				luaL_error(L, "Invalid IK ID as #2 argument");	
 				return 0;
 			}
+
 			//check wether this is a correct piece
 			if (unit->isValidIKChainPiece(lua_tofloat(L,2),lua_tofloat(L,3)) == false) {
 				luaL_error(L, "Invalid piece ID in SetUnitIKPieceSpeed");	

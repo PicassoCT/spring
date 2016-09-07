@@ -29,62 +29,72 @@ void IkChain::SetActive(bool isActive)
 }
 
 //recursive explore the model and find the end of the IK-Chain
-bool IkChain::recPiecePathExplore(LocalModelPiece* parentLocalModelPiece, int parentPiece, int endPieceNumber, int depth){
+bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece, 
+                                    unsigned int parentPiece,
+                                    unsigned int endPieceNumber, 
+                                    int depth){
     //Get DecendantsNumber
-   
-      for (auto piece = parentLocalModelPiece->children.begin(); piece !=  parentLocalModelPiece->children.end(); ++piece) 
+    std::cout<<"Reached recPiecePathExplore Depth"<< depth << "parentpiece:"<< parentPiece<<" /" <<endPieceNumber<<std::endl;
+    for (auto piece = (*parentLocalModelPiece).children.begin(); piece !=  (*parentLocalModelPiece).children.end(); ++piece) 
         {
-            LocalModelPiece* lPiece = *piece;
-            
-            //we found the last piece of the kinematikChain
-            if ((lPiece)->scriptPieceIndex == endPieceNumber){
+            Segment lSegment;
+            std::cout<<"scriptPieceIndex"<<(*piece)->scriptPieceIndex  <<" =? "<<endPieceNumber<<std::endl;
+           //we found the last piece of the kinematikChain --unsigned int compared with
+            if ((*piece)->scriptPieceIndex ==  endPieceNumber){
+             std::cout<<"recPiecePathExplore Endpiece found:"<< depth << "curr piecnr - > "<<((*piece))->scriptPieceIndex << " going for "<< endPieceNumber <<std::endl;
+
                 //lets gets size as a float
                 float magnitude = 42.0f; //TODO Get the magnitude dude
-                segments[depth]= *(new Segment( magnitude, BALLJOINT));
-                segments[depth].piece= lPiece;
-                segments[depth].pieceID= lPiece->scriptPieceIndex;
-                segment_size= depth + 1;
+                segments.resize(depth);
+                segments[depth] = Segment((*piece)->scriptPieceIndex, (*piece), magnitude, BALLJOINT);
+                segment_size= depth;
+
                 return true;
             }
             
             //if one of the pieces children is the endpiece backtrack
-            if (recPiecePathExplore(lPiece, lPiece->scriptPieceIndex , endPieceNumber, depth+1 ) == true)
+            if (recPiecePathExplore((*piece), 
+                                    (*piece)->scriptPieceIndex , 
+                                    endPieceNumber, 
+                                    depth+1 ) == true)
             {
+            std::cout<<"recPiecePathExplore Depth:"<< depth << "curr piecnr - > "<<((*piece))->scriptPieceIndex << " going for "<< endPieceNumber <<std::endl;
+
                 //Get the magnitude of the piece
                 Point3f nextStartPointOffset= Point3f(parentLocalModelPiece->GetAbsolutePos().x,
                                         parentLocalModelPiece->GetAbsolutePos().y,
                                         parentLocalModelPiece->GetAbsolutePos().z) ;
 
-                segments[depth]= *(new Segment( nextStartPointOffset, BALLJOINT));
-                segments[depth].piece= lPiece;
-                segments[depth].pieceID= lPiece->scriptPieceIndex;
-                
+                segments[depth] =Segment((*piece)->scriptPieceIndex, (*piece), nextStartPointOffset, BALLJOINT);
+
                 return true;        
             }
-
         }
-       
 return false;
 }
 
+bool IkChain::initializePiecePath(LocalModelPiece* startPiece, unsigned int startPieceID,unsigned int endPieceID){
 
-bool IkChain::initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID){
     //Check for 
-     if (startPiece  == NULL || startPieceID < 1 || endPieceID < 1 ) return false;
-    //TODO check wether start and Endpiece exist
-
-    IKActive= true;
+     if ( startPieceID < 1 || endPieceID < 1 ) return false;
 
     return recPiecePathExplore(startPiece, startPieceID, endPieceID, 0);
 }
 
-
-IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, float startPieceID, float endPieceID )
+IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID )
 {
     this->unit= unit;
+    segment_size=0;
+    std::cout<< "start,endpiece"<<startPieceID <<" / " <<endPieceID <<std::endl;
+   if( initializePiecePath(startPiece, (unsigned int) startPieceID, (unsigned int) endPieceID) == false) {
+    std::cout<<"Startpiece is beneath Endpiece - Endpiece could not be found"<<std::endl;
+   }
+  
+    // pre initialize all the Points
+    base        = Point3f(0,0,0);
+    goalPoint   = Point3f(0,0,0);
 
-    initializePiecePath(startPiece, (int) startPieceID, (int) endPieceID);
-
+    IKActive= false;
     IkChainID = id;
 }
 
@@ -118,11 +128,13 @@ float IkChain::getMaxLength(){
 		//for (auto seg = segments.cbegin(); seg != segments.cend(); ++seg) {
 		//totalDistance += seg.get_mag();
 		//}
-return NULL;
+return 0;
 };
 
 //TODO need max Speed per Segment and a diffrent Joint Type with Limited Rotation
 void IkChain::solve(float frames) {
+
+
     // prev and curr are for use of halving
     // last is making sure the iteration gets a better solution than the last iteration,
     // otherwise revert changes
@@ -286,12 +298,40 @@ void IkChain::solve(float frames) {
 }
 
 void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
-    //Get the Unitscript for the Unit that holds the segment
+     GoalChanged=false;
 
+    //Get the Unitscript for the Unit that holds the segment
+      for (auto seg = segments.begin(); seg !=  segments.end(); ++seg) {
+
+            unit->script->AddAnim(  CUnitScript::ATurn,
+                                    (int)((*seg).pieceID),  //pieceID 
+                                    1 ,   //axis     
+                                    3.0,   // speed
+                                    30.14159/2.0, // destination in rad
+                                    0.0f
+                                    );
+
+            unit->script->AddAnim( CUnitScript::ATurn,
+                                    (int)((*seg).pieceID),
+                                    2,
+                                    3.0,
+                                    3.14159/2.0, //TODO jointclamp this
+                                    0.0f
+                                    );
+
+            unit->script->AddAnim(  CUnitScript::ATurn,
+                                    (int)((*seg).pieceID),
+                                    3,
+                                    2,
+                                    -15.14159/2.0, //TODO jointclamp this
+                                    0.0f
+                                    );
+        }
 
 
 
     //itterate over the pieces
+    /*
     for(int i=0; i<segment_size; i++) {
             unit->script->AddAnim(   CUnitScript::ATurn,
                                     (int)segments[i].pieceID,
@@ -317,7 +357,7 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
                                     0.0f
                                     );
         }
-
+    */
     //apply transformation to the instance geometry
 
 
@@ -414,11 +454,6 @@ Point3f IkChain::calculateEndEffector(int segment_num /* = -1 */) {
     // return calculated end effector
     return ret;
 }
-
-void IkChain::set_segments(std::vector<Segment> segments){
-
-};
-
 
 
 

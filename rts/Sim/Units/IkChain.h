@@ -35,12 +35,14 @@ public:
 	///Constructors 
 	IkChain();
 	//Create the segments
+	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID);
 
-	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, float startPieceID, float endPieceID);
+	//Was the Goal altered
+	bool GoalChanged=true;
 
 	//Helper Function to inialize the Path recursive
-	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
-	bool initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID);
+	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, unsigned int parentPiece, unsigned int endPieceNumber, int depth);
+	bool initializePiecePath(LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID);
 	
 	//Checks wether a Piece is part of this chain
 	bool isValidIKPiece(float pieceID);
@@ -60,7 +62,6 @@ public:
 	//Get the Next PieceNumber while building the chain
 	int GetNextPieceNumber(float PieceNumber);
 
-	void set_segments(std::vector<Segment> segments);
 
 	//Creates a Jacobi Matrice
     Matrix<float,1,3> compute_jacovian_segment(int seg_num, Point3f goal_point, Point3f angle);
@@ -84,7 +85,7 @@ public:
 	std::vector <Segment> segments;
 
 	//Size of Segment
-	int segment_size = 0;
+	int segment_size ;
 
 
 	//Destructor
