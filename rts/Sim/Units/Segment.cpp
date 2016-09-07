@@ -1,5 +1,5 @@
 #include "Segment.h"
-
+#include "Rendering/Models/3DModel.h"
 //Constructor
 //We load into the Transformation Matrice the Identity Matrice
 

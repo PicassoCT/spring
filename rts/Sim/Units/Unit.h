@@ -91,12 +91,22 @@ public:
 	virtual void DoWaterDamage();
 	virtual void FinishedBuilding(bool postInit);
 	
+	float ikIDPool = 0;
+	IkChain * getIKChain(float ikID);
 	float CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID);
 	void SetIKActive(float ikID, bool Active);
 	void SetIKGoal(float ikID, float goalX, float goalY, float goalZ);
 	void SetIKPieceSpeed(float ikID, float pieceID, float velX, float velY, float velZ);
-	void SetIKPieceLimit(float ikID, float pieceID, float limX, float limY, float limZ);
-
+	void SetIKPieceLimit(	float ikID, 
+							float ikPieceID, 
+							float limX, 
+							float limUpX,
+							float limY, 
+							float limUpY,	
+							float limZ,
+							float limUpZ);
+	bool isValidIKChain(float ikID);
+	bool isValidIKChainPiece(float ikID, float pieceID);
 
 	void ApplyImpulse(const float3& impulse);
 

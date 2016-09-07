@@ -12,6 +12,7 @@ typedef enum {
     MONOJOINT
 } JointType;
 
+class LocalModelPiece;
 
 class Segment
 {
@@ -43,6 +44,11 @@ private:
 
         Point3f velocity;
         Point3f angleLimits;
+
+        //corresponding piece
+        LocalModelPiece* piece;
+        //yes, this is doubling (unchangeable) Information, but reducing pointeritis
+        float pieceID;
  
 
         // returns end point in object space

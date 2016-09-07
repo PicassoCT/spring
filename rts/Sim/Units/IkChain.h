@@ -19,11 +19,19 @@ class LocalModelPiece;
 class LocalModel;
 class CUnit;
 
+typedef enum {
+    OVERRIDE,
+    BLENDIN
+} MotionBlend;
+
+
 ///Class Ikchain- represents a Inverse Kinmatik Chain
 class IkChain
 {
 
 public:
+	enum AnimType {ANone = -1, ATurn = 0, ASpin = 1, AMove = 2};
+
 	///Constructors 
 	IkChain();
 	//Create the segments
@@ -33,6 +41,10 @@ public:
 	//Helper Function to inialize the Path recursive
 	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, int parentPiece, int endPieceNumber, int depth);
 	bool initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID);
+	
+	//Checks wether a Piece is part of this chain
+	bool isValidIKPiece(float pieceID);
+
 	//IK is active or paused
 	bool IKActive ;
 
@@ -42,6 +54,8 @@ public:
 	//Solves the Inverse Kinematik Chain for a new goal point
 	void solve(float frames );
 
+	//apply the resolved Kinematics to the actual Model
+	void applyIkTransformation(MotionBlend motionBlendMethod);
 
 	//Get the Next PieceNumber while building the chain
 	int GetNextPieceNumber(float PieceNumber);
@@ -68,6 +82,9 @@ public:
 
 	//Vector containing the Segments
 	std::vector <Segment> segments;
+
+	//Size of Segment
+	int segment_size = 0;
 
 
 	//Destructor

@@ -182,6 +182,7 @@ CUnit::CUnit()
 , curTerrainType(0)
 , selfDCountdown(0)
 , cegDamage(1)
+, ikIDPool(0)
 
 , noMinimap(false)
 , leaveTracks(false)
@@ -248,9 +249,10 @@ CUnit::~CUnit()
 	SafeDelete(prevMoveType);
 	
 	//delete all existing IK-Chains
-	//for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
-	//	save_delete(IkChains[ik]);
-	//} TODO Coment back in
+	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
+		//SafeDelete(*ik); TODO Memory Inontinence, the thirst be big, the allocator be going
+		//the trousers be filling, the process be tanking
+	} 
 	
 	
 	// ScriptCallback may reference weapons, so delete the script first
@@ -502,41 +504,101 @@ void CUnit::PostLoad()
 
 //////////////////////////////////////////////////////////////////////
 
-float CUnit::CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
-{
+bool CUnit::isValidIKChain(float ikID){
+	if (IkChains.empty()) return false;
 
-	IkChain* kinematIkChain= new IkChain((int)IkChains.size()+1, this, startPiece, startPieceID, endPieceID);
-	this->IkChains.push_back(kinematIkChain);
-	return kinematIkChain->IkChainID;	
-
+	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
+			
+				if ((*ik)->IkChainID == ikID) {
+					return true;
+				}
+			}
+	return false;
 }
 
+
+
+bool CUnit::isValidIKChainPiece(float ikID, float pieceID){
+	if (IkChains.empty()) return false;
+
+	IkChain* ik = getIKChain(ikID);
+
+	if (ik == NULL) return false;
+
+	return (*ik).isValidIKPiece(pieceID);
+}
+
+//returns the IKChain if existing, else NULL
+//in O(n)- which is okay for a small list
+IkChain* CUnit::getIKChain( float ikID)
+{
+	if (IkChains.empty()) return NULL;
+
+	for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {		
+				if ((*ik)->IkChainID == ikID)  {
+					return (*ik);
+				}
+			}
+
+	return NULL;
+}
+
+//Create the IKChain and return the ikID
+float CUnit::CreateIKChain(LocalModelPiece* startPiece, float startPieceID, float endPieceID)
+{
+	ikIDPool+= 1;
+	IkChain* kinematIkChain= new IkChain((int)ikIDPool, this, startPiece, startPieceID, endPieceID);
+	IkChains.push_back(kinematIkChain);
+
+	return kinematIkChain->IkChainID;	
+}
+
+//Activates or deactivates the IK-Chain
 void CUnit::SetIKActive(float ikID, bool Active){
+	IkChain* ik = getIKChain(ikID);
 	
-	IkChains[(int)ikID]->SetActive(Active);
-	
+	if (ik){
+		(*ik).SetActive(Active);
+	}
 };
 
+//Defines the TargetsCoords in UnitSpace
 void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ){
-
-	IkChains[(int)ikID]->goalPoint[0]= goalX;
-	IkChains[(int)ikID]->goalPoint[1]= goalY;
-	IkChains[(int)ikID]->goalPoint[2]= goalZ;
+	IkChain* ik = getIKChain(ikID);
 	
+	if (ik){
+	(*ik).goalPoint[0]= goalX;
+	(*ik).goalPoint[1]= goalY;
+	(*ik).goalPoint[2]= goalZ;
+	}
 };
 
+//Sets the Per Piece Velocity per Axis
 void CUnit::SetIKPieceSpeed(float ikID, float ikPieceID, float velX, float velY, float velZ){
-
-	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[0]= velX;
-	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[1]= velY;	
-	IkChains[(int)ikID]->segments[(int)ikPieceID].velocity[2]= velZ;
+	IkChain* ik = getIKChain(ikID);
+	
+	if (ik){
+	(*ik).segments[(int)ikPieceID].velocity[0]= velX;
+	(*ik).segments[(int)ikPieceID].velocity[1]= velY;	
+	(*ik).segments[(int)ikPieceID].velocity[2]= velZ;
+	}
 };
-
-void CUnit::SetIKPieceLimit(float ikID, float ikPieceID, float limX, float limY, float limZ){
-
-	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[0]= limX;
-	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[1]= limY;	
-	IkChains[(int)ikID]->segments[(int)ikPieceID].angleLimits[2]= limZ;
+//Defines a Joint Rotation Limit for each axis 
+void CUnit::SetIKPieceLimit(float ikID, 
+							float ikPieceID, 
+							float limX, 
+							float limUpX,
+							float limY, 
+							float limUpY,	
+							float limZ,
+							float limUpZ){
+	IkChain* ik = getIKChain(ikID);
+	
+	if (ik){
+	(*ik).segments[(int)ikPieceID].angleLimits[0]= limX;
+	(*ik).segments[(int)ikPieceID].angleLimits[1]= limY;	
+	(*ik).segments[(int)ikPieceID].angleLimits[2]= limZ;
+	}
 };
 
 

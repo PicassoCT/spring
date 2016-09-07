@@ -1,12 +1,27 @@
 
 #include "IkChain.h"
+#include "Unit.h"
 //#include "point3f.h"
 #include "Rendering/Models/3DModel.h"
+#include "Sim/Units/Scripts/UnitScript.h"
 
 // See end of source for member bindings
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
+
+
+//checks wether a IK-Chain contains a piece 
+bool IkChain::isValidIKPiece(float pieceID){
+        if (segments.empty()) {return false;}
+
+        for (auto seg = segments.begin(); seg !=  segments.end(); ++seg) 
+        {
+           if ((*seg).pieceID == pieceID) return true;
+        }
+
+return false;
+}
 
 void IkChain::SetActive(bool isActive)
 {
@@ -26,6 +41,9 @@ bool IkChain::recPiecePathExplore(LocalModelPiece* parentLocalModelPiece, int pa
                 //lets gets size as a float
                 float magnitude = 42.0f; //TODO Get the magnitude dude
                 segments[depth]= *(new Segment( magnitude, BALLJOINT));
+                segments[depth].piece= lPiece;
+                segments[depth].pieceID= lPiece->scriptPieceIndex;
+                segment_size= depth + 1;
                 return true;
             }
             
@@ -37,8 +55,11 @@ bool IkChain::recPiecePathExplore(LocalModelPiece* parentLocalModelPiece, int pa
                                         parentLocalModelPiece->GetAbsolutePos().y,
                                         parentLocalModelPiece->GetAbsolutePos().z) ;
 
-                segments[depth]= *(new Segment( nextStartPointOffset, BALLJOINT));  
-                return lPiece->scriptPieceIndex;        
+                segments[depth]= *(new Segment( nextStartPointOffset, BALLJOINT));
+                segments[depth].piece= lPiece;
+                segments[depth].pieceID= lPiece->scriptPieceIndex;
+                
+                return true;        
             }
 
         }
@@ -49,7 +70,7 @@ return false;
 
 bool IkChain::initializePiecePath(LocalModelPiece* startPiece, int startPieceID, int endPieceID){
     //Check for 
-     if (startPiece  == NULL || endPieceID == NULL ) return false;
+     if (startPiece  == NULL || startPieceID < 1 || endPieceID < 1 ) return false;
     //TODO check wether start and Endpiece exist
 
     IKActive= true;
@@ -89,7 +110,6 @@ std::numeric_limits<double>::epsilon())
 //////////////////////////////////////////////////////////////////////
 float IkChain::getMaxLength(){
 	float totalDistance=0;
-	Point3f lastEndPoint= Point3f(0,0,0);
 
     for(std::vector<Segment>::iterator seg = segments.begin(); seg != segments.end(); ++seg)
     {
@@ -249,6 +269,8 @@ void IkChain::solve(float frames) {
         }
     }
 
+    applyIkTransformation(OVERRIDE);
+
     /*
     // if we haven't gotten to a nice solution
     if (curr_err > err_margin) {
@@ -261,6 +283,45 @@ void IkChain::solve(float frames) {
         solve(goal_point, life_count-1);
     } else {
     */
+}
+
+void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
+    //Get the Unitscript for the Unit that holds the segment
+
+
+
+
+    //itterate over the pieces
+    for(int i=0; i<segment_size; i++) {
+            unit->script->AddAnim(   CUnitScript::ATurn,
+                                    (int)segments[i].pieceID,
+                                    0.0f ,
+                                    (segments[i].velocity)[0],
+                                    (segments[i].get_right())[0], //TODO jointclamp this
+                                    0.0f
+                                    );
+
+            unit->script->AddAnim( CUnitScript::ATurn,
+                                    (int)segments[i].pieceID,
+                                    1.0f,
+                                    (segments[i].velocity)[1],
+                                    (segments[i].get_up())[1], //TODO jointclamp this
+                                    0.0f
+                                    );
+
+            unit->script->AddAnim(  CUnitScript::ATurn,
+                                    (int)segments[i].pieceID,
+                                    2.0f,
+                                    (segments[i].velocity)[2],
+                                    (segments[i].get_z())[2], //TODO jointclamp this
+                                    0.0f
+                                    );
+        }
+
+    //apply transformation to the instance geometry
+
+
+
 }
 
 
