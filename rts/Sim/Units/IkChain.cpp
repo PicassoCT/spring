@@ -34,18 +34,18 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
                                     unsigned int endPieceNumber, 
                                     int depth){
     //Get DecendantsNumber
-    std::cout<<"Reached recPiecePathExplore Depth"<< depth << "parentpiece:"<< parentPiece<<" /" <<endPieceNumber<<std::endl;
     for (auto piece = (*parentLocalModelPiece).children.begin(); piece !=  (*parentLocalModelPiece).children.end(); ++piece) 
         {
             Segment lSegment;
-            std::cout<<"scriptPieceIndex"<<(*piece)->scriptPieceIndex  <<" =? "<<endPieceNumber<<std::endl;
+
            //we found the last piece of the kinematikChain --unsigned int compared with
             if ((*piece)->scriptPieceIndex ==  endPieceNumber){
-             std::cout<<"recPiecePathExplore Endpiece found:"<< depth << "curr piecnr - > "<<((*piece))->scriptPieceIndex << " going for "<< endPieceNumber <<std::endl;
+                std::cout<<"recPiecePathExplore Endpiece found:"<< depth << "curr piecnr - > "<<((*piece))->scriptPieceIndex << " going for "<< endPieceNumber <<std::endl;
 
                 //lets gets size as a float
                 float magnitude = 42.0f; //TODO Get the magnitude dude
-                segments.resize(depth);
+                segments.resize(depth+1, lSegment);
+                assert(!segments.empty() && (segments.size() == (depth+1)));
                 segments[depth] = Segment((*piece)->scriptPieceIndex, (*piece), magnitude, BALLJOINT);
                 segment_size= depth;
 
@@ -58,13 +58,12 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
                                     endPieceNumber, 
                                     depth+1 ) == true)
             {
-            std::cout<<"recPiecePathExplore Depth:"<< depth << "curr piecnr - > "<<((*piece))->scriptPieceIndex << " going for "<< endPieceNumber <<std::endl;
 
                 //Get the magnitude of the piece
                 Point3f nextStartPointOffset= Point3f(parentLocalModelPiece->GetAbsolutePos().x,
                                         parentLocalModelPiece->GetAbsolutePos().y,
                                         parentLocalModelPiece->GetAbsolutePos().z) ;
-
+                 assert(!segments.empty() );
                 segments[depth] =Segment((*piece)->scriptPieceIndex, (*piece), nextStartPointOffset, BALLJOINT);
 
                 return true;        
@@ -86,10 +85,10 @@ IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int 
     this->unit= unit;
     segment_size=0;
     std::cout<< "start,endpiece"<<startPieceID <<" / " <<endPieceID <<std::endl;
-   if( initializePiecePath(startPiece, (unsigned int) startPieceID, (unsigned int) endPieceID) == false) {
-    std::cout<<"Startpiece is beneath Endpiece - Endpiece could not be found"<<std::endl;
-   }
-  
+       if( initializePiecePath(startPiece, (unsigned int) startPieceID, (unsigned int) endPieceID) == false) {
+         std::cout<<"Startpiece is beneath Endpiece - Endpiece could not be found"<<std::endl;
+       }
+      
     // pre initialize all the Points
     base        = Point3f(0,0,0);
     goalPoint   = Point3f(0,0,0);
@@ -302,63 +301,40 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 
     //Get the Unitscript for the Unit that holds the segment
       for (auto seg = segments.begin(); seg !=  segments.end(); ++seg) {
+        Point3f velocity =(*seg).velocity;
+
+        Point3f transFormX= (*seg).get_up();
+        Point3f transFormY= (*seg).get_right();
+        Point3f transFormZ= (*seg).get_z();
+
+
+            unit->script->AddAnim(   CUnitScript::ATurn,
+                                    (int)((*seg).pieceID),  //pieceID 
+                                    1,//axis  
+                                    velocity[0],// speed
+                                    transFormX[0], //TODO jointclamp this
+                                    0.0f //acceleration
+                                    );
+
+            unit->script->AddAnim( CUnitScript::ATurn,
+                                    (int)((*seg).pieceID),  //pieceID 
+                                    2,//axis  
+                                    velocity[1],// speed
+                                    transFormY[1], //TODO jointclamp this
+                                    0.0f //acceleration
+                                    );
 
             unit->script->AddAnim(  CUnitScript::ATurn,
                                     (int)((*seg).pieceID),  //pieceID 
-                                    1 ,   //axis     
-                                    3.0,   // speed
-                                    30.14159/2.0, // destination in rad
-                                    0.0f
+                                    3,//axis  
+                                    velocity[2],// speed
+                                    transFormZ[2], //TODO jointclamp this
+                                    0.0f //acceleration
                                     );
 
-            unit->script->AddAnim( CUnitScript::ATurn,
-                                    (int)((*seg).pieceID),
-                                    2,
-                                    3.0,
-                                    3.14159/2.0, //TODO jointclamp this
-                                    0.0f
-                                    );
 
-            unit->script->AddAnim(  CUnitScript::ATurn,
-                                    (int)((*seg).pieceID),
-                                    3,
-                                    2,
-                                    -15.14159/2.0, //TODO jointclamp this
-                                    0.0f
-                                    );
         }
 
-
-
-    //itterate over the pieces
-    /*
-    for(int i=0; i<segment_size; i++) {
-            unit->script->AddAnim(   CUnitScript::ATurn,
-                                    (int)segments[i].pieceID,
-                                    0.0f ,
-                                    (segments[i].velocity)[0],
-                                    (segments[i].get_right())[0], //TODO jointclamp this
-                                    0.0f
-                                    );
-
-            unit->script->AddAnim( CUnitScript::ATurn,
-                                    (int)segments[i].pieceID,
-                                    1.0f,
-                                    (segments[i].velocity)[1],
-                                    (segments[i].get_up())[1], //TODO jointclamp this
-                                    0.0f
-                                    );
-
-            unit->script->AddAnim(  CUnitScript::ATurn,
-                                    (int)segments[i].pieceID,
-                                    2.0f,
-                                    (segments[i].velocity)[2],
-                                    (segments[i].get_z())[2], //TODO jointclamp this
-                                    0.0f
-                                    );
-        }
-    */
-    //apply transformation to the instance geometry
 
 
 
