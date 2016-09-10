@@ -95,7 +95,7 @@ public:
 	IkChain * getIKChain(float ikID);
 	float CreateIKChain(LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int  endPieceID);
 	void SetIKActive(float ikID, bool Active);
-	void SetIKGoal(float ikID, float goalX, float goalY, float goalZ);
+	void SetIKGoal(float ikID, float goalX, float goalY, float goalZ, bool isWorldCoordinate);
 	void SetIKPieceSpeed(float ikID, float pieceID, float velX, float velY, float velZ);
 	void SetIKPieceLimit(	float ikID, 
 							float ikPieceID, 

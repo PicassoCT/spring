@@ -564,14 +564,15 @@ void CUnit::SetIKActive(float ikID, bool Active){
 };
 
 //Defines the TargetsCoords in UnitSpace
-void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ){
+void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ, bool isWorldCoordinate){
 	IkChain* ik = getIKChain(ikID);
 	
 	if (ik){
-	(*ik).goalPoint[0]= goalX;
-	(*ik).goalPoint[1]= goalY;
-	(*ik).goalPoint[2]= goalZ;	
-	(*ik).GoalChanged =	true;
+	(*ik).goalPoint[0]	= goalX;
+	(*ik).goalPoint[1]	= goalY;
+	(*ik).goalPoint[2]	= goalZ;	
+	(*ik).GoalChanged 	= true;
+	(*ik).isWorldCoordinate = isWorldCoordinate;
 	}
 };
 
@@ -597,9 +598,13 @@ void CUnit::SetIKPieceLimit(float ikID,
 	IkChain* ik = getIKChain(ikID);
 	
 	if (ik){
-	(*ik).segments[(int)ikPieceID].angleLimits[0]= limX;
-	(*ik).segments[(int)ikPieceID].angleLimits[1]= limY;	
-	(*ik).segments[(int)ikPieceID].angleLimits[2]= limZ;
+		(*ik).segments[(int)ikPieceID].setLimitJoint( 	limX, 
+														limUpX,
+														limY, 
+														limUpY,	
+														limZ,
+														limUpZ);
+
 	}
 };
 
@@ -954,7 +959,7 @@ void CUnit::Update()
 	if (IkChains.size()> 0){
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
-				if (ikChain->IKActive == true && ikChain->GoalChanged==true) {
+				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
 					ikChain->solve(15.0f);	//TODO replce fixed framenumber	
 				}
 			}
@@ -986,7 +991,7 @@ void CUnit::Update()
 		} else {
 			// slave transportee orientation to body
 			transportee->heading  = heading;
-			transportee->updir    = updir;
+			transportee->updir	= updir;
 			transportee->frontdir = frontdir;
 			transportee->rightdir = rightdir;
 		}
@@ -1072,7 +1077,7 @@ unsigned short CUnit::CalcLosStatus(int at)
 
 	if (losHandler->InLos(this, at)) {
 		newStatus |= (mask & (LOS_INLOS   | LOS_INRADAR |
-		                      LOS_PREVLOS | LOS_CONTRADAR));
+							  LOS_PREVLOS | LOS_CONTRADAR));
 	}
 	else if (losHandler->InRadar(this, at)) {
 		newStatus |=  (mask & LOS_INRADAR);
@@ -1176,7 +1181,7 @@ void CUnit::SlowUpdate()
 			buildDecay = 1.0f / std::max(0.001f, buildDecay);
 			buildDecay = std::min(buildProgress, buildDecay);
 
-			health         = std::max(0.0f, health - maxHealth * buildDecay);
+			health		 = std::max(0.0f, health - maxHealth * buildDecay);
 			buildProgress -= buildDecay;
 
 			AddMetal(cost.metal * buildDecay, false);
@@ -1558,7 +1563,7 @@ void CUnit::AddExperience(float exp)
 	limExperience = experience / (experience + 1.0f);
 
 	if (expGrade != 0.0f) {
-		const int oldGrade = (int)(oldLimExp     / expGrade);
+		const int oldGrade = (int)(oldLimExp	 / expGrade);
 		const int newGrade = (int)(limExperience / expGrade);
 		if (oldGrade != newGrade) {
 			eventHandler.UnitExperience(this, oldExp);
@@ -1651,10 +1656,10 @@ bool CUnit::ChangeTeam(int newteam, ChangeType type)
 
 	if (type == ChangeGiven) {
 		teamHandler->Team(oldteam)->RemoveUnit(this, CTeam::RemoveGiven);
-		teamHandler->Team(newteam)->AddUnit(this,    CTeam::AddGiven);
+		teamHandler->Team(newteam)->AddUnit(this,	CTeam::AddGiven);
 	} else {
 		teamHandler->Team(oldteam)->RemoveUnit(this, CTeam::RemoveCaptured);
-		teamHandler->Team(newteam)->AddUnit(this,    CTeam::AddCaptured);
+		teamHandler->Team(newteam)->AddUnit(this,	CTeam::AddCaptured);
 	}
 
 	if (!beingBuilt) {
@@ -1881,8 +1886,8 @@ void CUnit::DependentDied(CObject* o)
 	}
 
 	if (o == curTarget.unit) { DropCurrentAttackTarget(); }
-	if (o == soloBuilder)    { soloBuilder  = NULL; }
-	if (o == transporter)    { transporter  = NULL; }
+	if (o == soloBuilder)	{ soloBuilder  = NULL; }
+	if (o == transporter)	{ transporter  = NULL; }
 	if (o == lastAttacker)   { lastAttacker = NULL; }
 
 	VectorErase(incomingMissiles, static_cast<CMissileProjectile*>(o));
@@ -1926,10 +1931,10 @@ void CUnit::UpdateTerrainType()
 void CUnit::CalculateTerrainType()
 {
 	enum {
-		SFX_TERRAINTYPE_NONE    = 0,
+		SFX_TERRAINTYPE_NONE	= 0,
 		SFX_TERRAINTYPE_WATER_A = 1,
 		SFX_TERRAINTYPE_WATER_B = 2,
-		SFX_TERRAINTYPE_LAND    = 4,
+		SFX_TERRAINTYPE_LAND	= 4,
 	};
 
 	// optimization: there's only about one unit that actually needs this information

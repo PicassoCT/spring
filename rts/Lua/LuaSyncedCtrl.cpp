@@ -1406,9 +1406,11 @@ int LuaSyncedCtrl::SetUnitIKGoal(lua_State* L)
 		luaL_error(L, "Invalid IK ID as #2 argument");	
 		return 0;
 	}
+	bool isWorldCoordinate= false;
+	if (lua_isboolean(L,6)==true ){	isWorldCoordinate = true;}
 
 
-		unit->SetIKGoal(lua_tofloat(L,2),lua_tofloat(L,3),lua_tofloat(L,4),lua_tofloat(L,5));
+		unit->SetIKGoal(lua_tofloat(L,2),lua_tofloat(L,3),lua_tofloat(L,4),lua_tofloat(L,5), isWorldCoordinate);
 		return 0;
 	}
 	luaL_error(L, "SetUnitIKGoal has missing/ wrong arguments");	

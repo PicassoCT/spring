@@ -20,8 +20,8 @@ class LocalModel;
 class CUnit;
 
 typedef enum {
-    OVERRIDE,
-    BLENDIN
+	OVERRIDE,
+	BLENDIN
 } MotionBlend;
 
 
@@ -31,7 +31,8 @@ class IkChain
 
 public:
 	enum AnimType {ANone = -1, ATurn = 0, ASpin = 1, AMove = 2};
-
+	//Yes, diffrent axis as in the luacode- deal with it
+	enum Axis {xAxis = 0, yAxis = 1, zAxis =2 };
 	///Constructors 
 	IkChain();
 	//Create the segments
@@ -40,12 +41,18 @@ public:
 	//Was the Goal altered
 	bool GoalChanged=true;
 
+	//is the GoalPoint a World Coordinate?
+	bool isWorldCoordinate =false;
+
 	//Helper Function to inialize the Path recursive
 	bool recPiecePathExplore(LocalModelPiece* parentLocalModel, unsigned int parentPiece, unsigned int endPieceNumber, int depth);
 	bool initializePiecePath(LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID);
 	
 	//Checks wether a Piece is part of this chain
 	bool isValidIKPiece(float pieceID);
+
+	//Transfers a global Worldspace coordinate into a unitspace coordinate
+	Point3f TransformGoalToUnitspace(Point3f goal);
 
 	//IK is active or paused
 	bool IKActive ;
@@ -59,15 +66,21 @@ public:
 	//apply the resolved Kinematics to the actual Model
 	void applyIkTransformation(MotionBlend motionBlendMethod);
 
+	//Set Piece Limitations
+
 	//Get the Next PieceNumber while building the chain
 	int GetNextPieceNumber(float PieceNumber);
 
 
 	//Creates a Jacobi Matrice
-    Matrix<float,1,3> compute_jacovian_segment(int seg_num, Point3f goal_point, Point3f angle);
+	Matrix<float,1,3> compute_jacovian_segment(int seg_num, Point3f goal_point, Vector3f  angle);
 
-    // computes end_effector up to certain number of segments
-    Point3f calculate_end_effector(int segment_num = -1);
+	// computes end_effector up to certain number of segments
+	Point3f calculate_end_effector(int segment_num = -1);
+
+	//Gets the basic bone rotation for the piece 
+	//TODO it would be a great performance saviour if there was a flag 
+	Point3f GetBoneBaseRotation(void);
 
 	//unit this IKChain belongs too
 	CUnit* unit;
