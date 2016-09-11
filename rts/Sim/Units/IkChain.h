@@ -61,7 +61,8 @@ public:
 	void SetActive (bool isActive);
 
 	//Solves the Inverse Kinematik Chain for a new goal point
-	void solve(float frames );
+	//Returns wether a ik-solution could be found
+	bool solve(float frames );
 
 	//apply the resolved Kinematics to the actual Model
 	void applyIkTransformation(MotionBlend motionBlendMethod);

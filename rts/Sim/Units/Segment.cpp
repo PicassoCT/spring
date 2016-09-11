@@ -30,6 +30,7 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  Point3f pUnitNe
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
+	lastValidRotation= Point3f(0,0,0);
 }
 
 //Intialize the Segment - TODO at last Segment, hand over maxsize of segment
@@ -47,6 +48,7 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude,
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
+	lastValidRotation= Point3f(0,0,0);
 }
 
 //Destructor
@@ -78,8 +80,8 @@ float Segment::distance(Point3f a, Point3f b)
 
 
 //Clamp Limited Joints - For a fixed Value, just specify Limits that are equal
- Point3f  Segment::clampJoint(Point3f Value)
- {
+Point3f  Segment::clampJoint(Point3f Value)
+{
 
 	Value(0,0) =  (Value(0,0) < jointUpLim(0,0))? Value(0,0) : jointUpLim(0,0);
 	Value(1,0) =  (Value(1,0) < jointUpLim(1,0))? Value(1,0) : jointUpLim(1,0);
@@ -90,10 +92,11 @@ float Segment::distance(Point3f a, Point3f b)
 	Value(2,0) =  (Value(2,0) < jointLowLim(2,0))? Value(2,0) : jointLowLim(2,0);
 
 	return Value;
- }
+}
 
 
-Point3f Segment::get_end_point() {
+Point3f Segment::get_end_point()
+{
 
 	// start with vector going into the Z direction
 	// transform into the rotation of the segment
@@ -106,9 +109,9 @@ Point3f Segment::get_right()
 
 	switch(joint){
 	case BALLJOINT:
-		return T * Point3f(1, 0, 0);
+		return T * Vector3f(1, 0, 0);
 	case LIMJOINT:
-		return clampJoint(T * Point3f(1, 0, 0));
+		return clampJoint(T * Vector3f(1, 0, 0));
 	default:
 		return  Point3f(0, 0, 0);
 	}
@@ -131,7 +134,8 @@ Vector3f  Segment::get_up()
 
 
 ///Gets the Z-Component -Roll
-Vector3f  Segment::get_z() {
+Vector3f  Segment::get_z() 
+{
 
 	switch(joint)
 	{
@@ -149,7 +153,8 @@ Vector3f  Segment::get_z() {
 								float limY, 
 								float limUpY,   
 								float limZ,
-								float limUpZ){
+								float limUpZ)
+ {
 	joint= LIMJOINT;
 
 	//Clamp the joint
@@ -214,26 +219,46 @@ void Segment::reset()
 	T = T.Identity();
 }
 
+
 Point3f Segment::get_rotation()
 {
-    Point3f worldVector(0,0,1);
-    worldVector = T* worldVector;
-    worldVector= worldVector.normalized();
+	const double PI = 3.1415926535897;
 
-    //now lets decompose this vector into radians
-    std::cout<<"Transformation:"<<std::endl;
-    std::cout<<worldVector(0,0)<<std::endl;
-    std::cout<<worldVector(1,0)<<std::endl;
-    std::cout<<worldVector(2,0)<<std::endl;
+	float x, y, z, angle, heading, bank, attitude;
+	Point3f worldVector;
+	worldVector = Point3f(0,0,mag);
+	worldVector = T * worldVector;
 
-    
+	worldVector= worldVector.normalized();
+	x= worldVector(0,0);
+	y= worldVector(1,0);
+	z= worldVector(2,0);
+	angle = T.angle();
 
-	float Yaw,Pitch, Roll;
-    Roll = 0;
+	float s=sin(angle);
+	float c=cos(angle);
+	float t=1-c;
 
-    Pitch = atan2(sqrt(pow(worldVector(0,0),2) + pow(worldVector(1,0),2)),
-                            worldVector(2,0));
-    Yaw = atan2 (worldVector(1,0),worldVector(0,0));
+	if ((x*y*t + z*s) > 0.998) // north pole singularity detected
+	{ 
+		heading = 2*atan2(x*sin(angle/2),cos(angle/2));
+		attitude = PI/2;
+		bank = 0;
+		return lastValidRotation;
+	}
 
-	return Point3f(Pitch,Yaw,Roll);
+	if ((x*y*t + z*s) < -0.998) // south pole singularity detected
+	{ 
+		heading = -2*atan2(x*sin(angle/2),cos(angle/2));
+		attitude = -1* (PI/2);
+		bank = 0;
+		return lastValidRotation;
+	}
+	
+	heading = atan2(y * s- x * z * t , 1 - (y*y+ z*z ) * t);
+	attitude = asin(x * y * t + z * s) ;
+	bank = atan2(x * s - y * z * t , 1 - (x*x + z*z) * t);
+
+	lastValidRotation= Point3f(attitude,heading,bank);
+	return lastValidRotation;
 }

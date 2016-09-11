@@ -141,8 +141,8 @@ Point3f IkChain::TransformGoalToUnitspace(Point3f goal){
 
 
 //TODO need max Speed per Segment and a diffrent Joint Type with Limited Rotation
-void IkChain::solve(float frames) {
-
+bool IkChain::solve(float life_count) {
+	std::cout<<"Solving IK for "<<life_count <<" life_count"<<std::endl;
 
 	// prev and curr are for use of halving
 	// last is making sure the iteration gets a better solution than the last iteration,
@@ -153,23 +153,23 @@ void IkChain::solve(float frames) {
 	int count = 0;
 	float err_margin = 0.01;
 
-	Point3f goal_point;
+	Point3f goal_point = goalPoint;
 
 	if (isWorldCoordinate == true ){
 		//TODO Transform it from worldspace into unitspace
 		goal_point =  TransformGoalToUnitspace(goalPoint);
-		goal_point = goalPoint -base; 
-	}else{
-
-	 goal_point = goalPoint -base; 
+	
 	}
+	goal_point = goal_point -base; 
+	
 
 	//Clamp against outside of range
 	std::cout<<"GoalPoint" << goal_point<<std::endl;
 	
-	std::cout<<"IkChain:solve:"<<goal_point.norm() <<" > " <<getMaxLength()<<std::endl;
 	if (goal_point.norm() > getMaxLength()) {
-		goal_point = goal_point.normalized() * getMaxLength();
+		std::cout<<"IkChain:solve:Goal Point out of reach - substituting with normvec * Armlength"<<std::endl;
+
+		goal_point = (goal_point.normalized()) * getMaxLength();
 	}
 
 
@@ -302,9 +302,20 @@ void IkChain::solve(float frames) {
 			break;
 		}
 	}
+	 if (curr_err > err_margin) {
+	        // kill off infinitely recursive solutions
+	        if (life_count <= 0) {
+	            return false;
+	        }
+	        // try to solve it again
+	        return solve( life_count-1);
+	    }else{
+	    	std::cout<<"Solved IK-System - now applying"<<std::endl;
+	    }
+
 
 	applyIkTransformation(OVERRIDE);
-
+	return true;
    
 }
 
@@ -350,7 +361,7 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 			segMentCounter++;
 			Point3f velocity =(*seg).velocity;
 			Point3f rotation = (*seg).get_rotation();
-		//	std::cout<<"Rotation Matrice "<<segMentCounter<<" ="<<rotation<<std::endl;
+		//solve	std::cout<<"Rotation Matrice "<<segMentCounter<<" ="<<rotation<<std::endl;
 			
 			rotation += pAccRotation;
 			pAccRotation-= rotation;

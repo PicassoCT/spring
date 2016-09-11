@@ -64,7 +64,7 @@ private:
 		LocalModelPiece* piece;
 		//yes, this is doubling (unchangeable) Information, but reducing pointeritis
 		unsigned int pieceID;
- 
+ 		Point3f lastValidRotation;
 
 		// returns end point in object space
 		Point3f get_end_point();

@@ -960,7 +960,7 @@ void CUnit::Update()
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
 				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
-					ikChain->solve(15.0f);	//TODO replce fixed framenumber	
+					ikChain->solve(10);	//TODO replce fixed framenumber	
 				}
 			}
 	}
