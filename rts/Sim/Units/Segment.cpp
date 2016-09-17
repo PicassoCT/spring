@@ -22,7 +22,7 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  Point3f pUnitNe
 	this->pieceID= pieceID;
 	piece= lPiece;
 
-	float3 basePosition = piece->GetPosition();
+	float3 basePosition = piece->GetAbsolutePos();
 	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z);
 
 	//distance to next point - aka magnitude
@@ -40,7 +40,7 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude,
 	this->pieceID= pieceID;
 	piece= lPiece;
 
-	float3 basePosition = piece->GetPosition();
+	float3 basePosition = piece->GetAbsolutePos();
 	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z);
 	
 	//distance to next point - aka magnitude
@@ -230,10 +230,12 @@ Point3f Segment::get_rotation()
 	worldVector = T * worldVector;
 
 	worldVector= worldVector.normalized();
-	x= worldVector(0,0);
-	y= worldVector(1,0);
-	z= worldVector(2,0);
+	x= worldVector[0];
+	y= worldVector[1];
+	z= worldVector[2];
 	angle = T.angle();
+
+	std::cout<<"worldVector"<< x << "  "<< y << "  " << z << "Angle :"<< angle <<std::endl;
 
 	float s=sin(angle);
 	float c=cos(angle);
@@ -258,7 +260,10 @@ Point3f Segment::get_rotation()
 	heading = atan2(y * s- x * z * t , 1 - (y*y+ z*z ) * t);
 	attitude = asin(x * y * t + z * s) ;
 	bank = atan2(x * s - y * z * t , 1 - (x*x + z*z) * t);
+	std::cout<<"heading "<<heading << "attitude "<<attitude << "bank "<<bank <<std::endl;
+	lastValidRotation[0]=attitude;
+	lastValidRotation[1]=heading;
+	lastValidRotation[2]=bank;
 
-	lastValidRotation= Point3f(attitude,heading,bank);
 	return lastValidRotation;
 }

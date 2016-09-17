@@ -92,6 +92,8 @@ public:
 	//The baseposition in WorldCoordinats
 	Point3f base;
 
+
+
 	// the goal Point also in World Coordinats
 	Point3f goalPoint;
 
@@ -99,8 +101,13 @@ public:
 	std::vector <Segment> segments;
 
 	//Size of Segment
-	int segment_size ;
+	//int segment_size ;
 
+	//Plots the whole IK-Chain
+	void print();
+	
+	//Debug function
+	void printPoint( const char* name, float x, float y, float z);
 
 	//Destructor
 	~IkChain();

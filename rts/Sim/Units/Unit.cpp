@@ -549,7 +549,7 @@ float CUnit::CreateIKChain(LocalModelPiece* startPiece, unsigned int startPieceI
 	ikIDPool+= 1;
 	IkChain* kinematIkChain= new IkChain((int)ikIDPool, this, startPiece, startPieceID, endPieceID);
 	IkChains.push_back(kinematIkChain);
-
+	kinematIkChain->print();
 	return kinematIkChain->IkChainID;	
 }
 
@@ -573,6 +573,7 @@ void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ, bool is
 	(*ik).goalPoint[2]	= goalZ;	
 	(*ik).GoalChanged 	= true;
 	(*ik).isWorldCoordinate = isWorldCoordinate;
+	(*ik).print();
 	}
 };
 
@@ -959,9 +960,11 @@ void CUnit::Update()
 	if (IkChains.size()> 0){
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
-				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
-					ikChain->solve(10);	//TODO replce fixed framenumber	
-				}
+				ikChain->solve(12);	//TODO replce fixed framenumber	
+
+				//if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
+				//		ikChain->solve(12);	//TODO replce fixed framenumber	
+				//	}
 			}
 	}
 

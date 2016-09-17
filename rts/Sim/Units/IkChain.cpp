@@ -48,7 +48,7 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 				segments.resize(depth+1, lSegment);
 				assert(!segments.empty() && (segments.size() == (depth+1)));
 				segments[depth] = Segment((*piece)->scriptPieceIndex, (*piece), scale.y, BALLJOINT);
-				segment_size= depth;
+				//segment_size= depth;
 
 				return true;
 			}
@@ -62,7 +62,7 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 			//   std::cout<<"Piece at :"<< depth << " piecnr - > "<<((*piece))->scriptPieceIndex <<std::endl;
 
 				//Get the magnitude of the bone - extract the startPoint of the successor
-				float3 posBase = segments[depth+1].piece->GetPosition();
+				float3 posBase = segments[depth+1].piece->GetAbsolutePos();
 
 				Point3f pUnitNextPieceBasePointOffset= Point3f(posBase.x,posBase.y,posBase.z);
 
@@ -87,19 +87,51 @@ bool IkChain::initializePiecePath(LocalModelPiece* startPiece, unsigned int star
 IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID )
 {
 	this->unit= unit;
-	segment_size=0;
+	//segment_size=0;
 	//std::cout<< "start,endpiece"<<startPieceID <<" / " <<endPieceID <<std::endl;
 	  if( initializePiecePath(startPiece, (unsigned int) startPieceID, (unsigned int) endPieceID) == false) {
 		std::cout<<"Startpiece is beneath Endpiece - Endpiece could not be found"<<std::endl;
 	  }
 	 
 	// pre initialize all the Points - and the 
-	float3 piecePos= startPiece->GetPosition();
+	float3 piecePos= startPiece->GetAbsolutePos();
 	base		= Point3f(piecePos.x,piecePos.y,piecePos.z);
 	goalPoint   = Point3f(0,0,0);
 
 	IKActive= false;
 	IkChainID = id;
+}
+
+void IkChain::printPoint( const char* name, float x, float y, float z)
+{
+	std::cout << "	<<--------------------------------"<<std::endl;
+	std::cout << "	"<<name<< "=	X: ("<<x<<") "<<" Y: ("<<y<<") "<<" Z: ("<<z<<") "<<std::endl;
+	std::cout << "	---------------------------------->> "<<std::endl;
+}
+
+
+void IkChain::print()
+{
+	
+	Point3f transformed;
+	transformed = goalPoint.normalized() * getMaxLength();
+
+	std::cout<<  "============================================== "<<std::endl;
+	std::cout<<  " IkChain = "<<std::endl;
+	std::cout<<  "	[[ "<<std::endl;
+	printPoint("GoalPoint:", goalPoint(0,0),goalPoint(1,0),goalPoint(2,0));
+	printPoint("Clamped Goal:", transformed[0],transformed[1],transformed[2]);
+	printPoint("Base:", base(0,0),base(1,0),base(2,0));
+	std::cout<<"MaxLength: "<< getMaxLength()<<std::endl;
+	std::cout<<"isWorldCoordinate: "<<isWorldCoordinate <<std::endl;
+
+		for (auto seg = segments.begin(); seg != segments.end(); ++seg) 
+		{
+			seg->print();
+		}
+	std::cout<< "	]] "<<std::endl;
+	std::cout<<  "============================================== "<<std::endl;
+
 }
 
 IkChain::~IkChain()
@@ -127,11 +159,11 @@ float IkChain::getMaxLength(){
   //Get DecendantsNumber
 	for (auto seg = segments.begin(); seg != segments.end(); ++seg) 
 	{
-		totalDistance += seg->get_mag();
+		totalDistance += fabs(seg->get_mag());
 	}
 		
-return totalDistance;
-};
+return (totalDistance-1.0);
+}
 
 Point3f IkChain::TransformGoalToUnitspace(Point3f goal){
 	float3 fGoal= float3(goal(0,0),goal(1,0),goal(2,0));
@@ -142,8 +174,8 @@ Point3f IkChain::TransformGoalToUnitspace(Point3f goal){
 
 //TODO need max Speed per Segment and a diffrent Joint Type with Limited Rotation
 bool IkChain::solve(float life_count) {
-	std::cout<<"Solving IK for "<<life_count <<" life_count"<<std::endl;
 
+	
 	// prev and curr are for use of halving
 	// last is making sure the iteration gets a better solution than the last iteration,
 	// otherwise revert changes
@@ -160,19 +192,17 @@ bool IkChain::solve(float life_count) {
 		goal_point =  TransformGoalToUnitspace(goalPoint);
 	
 	}
-	goal_point = goal_point -base; 
+	//Offset the goal point so 
+	goal_point = goal_point + base; 
 	
 
 	//Clamp against outside of range
-	std::cout<<"GoalPoint" << goal_point<<std::endl;
-	
 	if (goal_point.norm() > getMaxLength()) {
-		std::cout<<"IkChain:solve:Goal Point out of reach - substituting with normvec * Armlength"<<std::endl;
 
-		goal_point = (goal_point.normalized()) * getMaxLength();
+		goal_point = goal_point.normalized() * getMaxLength();
 	}
 
-
+	printPoint("Start Solving Goal_Point",goal_point[0],goal_point[1],goal_point[2]);
 	current_point = calculate_end_effector();
 
 	// save the first err
@@ -181,7 +211,9 @@ bool IkChain::solve(float life_count) {
 	last_err = curr_err;
 
 	// while the current point is close enough, stop iterating
-	while (curr_err > err_margin) {
+	while (curr_err > err_margin) 
+	{
+		//std::cout<<"Iterrate Jocobi matrice - current Error"<< curr_err<< "ErrorMargin:"<<err_margin<<std::endl;
 		// calculate the difference between the goal_point and current_point
 		Vector3f dP = goal_point - current_point;
 
@@ -219,7 +251,8 @@ bool IkChain::solve(float life_count) {
 
 
 
-		for(int i=0; i<3*segment_size; i+=3) {
+		for(int i=0; i<3*segment_size; i+=3) { 
+
 			// save the current transformation on the segments
 			segments[i/3].save_transformation();
 
@@ -287,6 +320,7 @@ bool IkChain::solve(float life_count) {
 			//cout << "curr err: " << curr_err << " || last err: " << last_err << endl;
 			break;
 		}
+
 		for(int i=0; i<segment_size; i++) {
 			// unapply the change to the saved angle
 			segments[i].save_last_transformation();
@@ -302,18 +336,20 @@ bool IkChain::solve(float life_count) {
 			break;
 		}
 	}
-	 if (curr_err > err_margin) {
-	        // kill off infinitely recursive solutions
+
+	if (curr_err > err_margin) {
+
+	        // recursive rock bottom
 	        if (life_count <= 0) {
+	        	applyIkTransformation(OVERRIDE);
 	            return false;
 	        }
+
 	        // try to solve it again
 	        return solve( life_count-1);
-	    }else{
-	    	std::cout<<"Solved IK-System - now applying"<<std::endl;
 	    }
 
-
+	std::cout<<"Solved IK-System - now applying"<<std::endl;
 	applyIkTransformation(OVERRIDE);
 	return true;
    
@@ -361,8 +397,8 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 			segMentCounter++;
 			Point3f velocity =(*seg).velocity;
 			Point3f rotation = (*seg).get_rotation();
-		//solve	std::cout<<"Rotation Matrice "<<segMentCounter<<" ="<<rotation<<std::endl;
-			
+
+			std::cout<<"Rotation "<<segMentCounter << " X"<<rotation[0]<< " Y"<<rotation[1]<< " Z"<<rotation[2]<<std::endl;
 			rotation += pAccRotation;
 			pAccRotation-= rotation;
 		
