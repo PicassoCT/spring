@@ -23,10 +23,12 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  Point3f pUnitNe
 	piece= lPiece;
 
 	float3 basePosition = piece->GetAbsolutePos();
-	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z);
+	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z) ;
 
 	//distance to next point - aka magnitude
 	mag = distance(pUnitNextPieceBasePoint,pUnitPieceBasePoint);
+	orgDirVec= (pUnitPieceBasePoint - pUnitNextPieceBasePoint).normalized();
+
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
@@ -41,10 +43,13 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude,
 	piece= lPiece;
 
 	float3 basePosition = piece->GetAbsolutePos();
-	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z);
+	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z) ;
 	
 	//distance to next point - aka magnitude
 	mag = magnitude;
+	
+	orgDirVec= (pUnitPieceBasePoint - Point3f(basePosition.x,basePosition.y - mag,basePosition.z)).normalized();
+	
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
@@ -100,7 +105,7 @@ Point3f Segment::get_end_point()
 
 	// start with vector going into the Z direction
 	// transform into the rotation of the segment
-	return (T * Point3f(0, 0, mag)) ;
+	return (T * (orgDirVec*mag) );
 }
 
 ///Gets the X-Component-  Pitch
@@ -181,7 +186,7 @@ AngleAxisf Segment::get_T()
 
 float Segment::get_mag() 
 {
-	return mag;
+	return (float) fabs(mag);
 }
 
 void Segment::save_last_transformation() 
@@ -220,11 +225,14 @@ void Segment::reset()
 }
 
 
+	
 Point3f Segment::get_rotation()
 {
 	const double PI = 3.1415926535897;
 
 	float x, y, z, angle, heading, bank, attitude;
+	
+	
 	Point3f worldVector;
 	worldVector = Point3f(0,0,mag);
 	worldVector = T * worldVector;

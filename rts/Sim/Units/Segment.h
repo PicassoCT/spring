@@ -8,6 +8,7 @@
 #include <math.h>
 #include "point3f.h"
 
+
 typedef enum {
 	BALLJOINT,
 	LIMJOINT
@@ -29,7 +30,10 @@ private:
 
 		// save the angle when computing the changes
 		Point3f saved_angle;
-
+		
+		//Original Vector
+		Point3f orgDirVec;
+	
 		// the type of joint the origin of the segment is
 		// connected to
 		JointType joint;

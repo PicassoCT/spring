@@ -960,11 +960,10 @@ void CUnit::Update()
 	if (IkChains.size()> 0){
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
-				ikChain->solve(12);	//TODO replce fixed framenumber	
 
-				//if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
-				//		ikChain->solve(12);	//TODO replce fixed framenumber	
-				//	}
+				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
+						ikChain->solve(100);	//TODO replce fixed framenumber	
+					}
 			}
 	}
 

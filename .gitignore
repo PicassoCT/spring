@@ -46,6 +46,12 @@ progress.make
 /build.ninja
 /rules.ninja
 
+#Codelite related
+/.codelite
+sprinbuild.project
+spring.workspace
+
+
 # Visual Studio related
 *.ncb
 *.suo
