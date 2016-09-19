@@ -44,7 +44,11 @@ private:
 		//UnitOrigin Position in UnitSpace
 		Point3f pUnitPieceBasePoint;
 		
-	public:
+
+		
+public:
+		bool alteredInSolve;
+	
 		// constructors
 		Segment();
 		Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude, JointType jt);

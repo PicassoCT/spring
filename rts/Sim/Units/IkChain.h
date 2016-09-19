@@ -103,7 +103,7 @@ public:
 	
 	//Debug function
 	void printPoint( const char* name, float x, float y, float z);
-
+	void printPoint( const char* name, Point3f point);
 	//Destructor
 	~IkChain();
 private:

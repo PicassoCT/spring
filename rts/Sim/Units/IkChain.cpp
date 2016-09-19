@@ -50,7 +50,6 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 	//Get DecendantsNumber
 	for (auto piece = (*parentLocalModelPiece).children.begin(); piece !=  (*parentLocalModelPiece).children.end(); ++piece) 
 		{
-			Segment lSegment;
 
 		  //we found the last piece of the kinematikChain --unsigned int compared with
 			if ((*piece)->scriptPieceIndex ==  endPieceNumber){
@@ -58,11 +57,12 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 
 				//lets gets size as a float3
 				float3 scale = (*piece)->GetCollisionVolume()->GetScales();
+				
 
-				segments.resize(depth+1, lSegment);
+				segments.resize(depth+1);
 				assert(!segments.empty() && (segments.size() == (depth+1)));
 				segments[depth] = Segment((*piece)->scriptPieceIndex, (*piece), scale.y, BALLJOINT);
-				//segment_size= depth;
+
 
 				return true;
 			}
@@ -118,6 +118,11 @@ IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int 
 	SetTransformation(0,0,0);
 	
 }
+void IkChain::printPoint( const char* name, Point3f point)
+{
+	printPoint(name, point[0], point[1], point[2]);
+}
+
 
 void IkChain::printPoint( const char* name, float x, float y, float z)
 {
@@ -179,7 +184,7 @@ float IkChain::getMaxLength(){
 		totalDistance += seg->get_mag();
 	}
 		
-return (totalDistance-1.0);
+return (totalDistance*0.95);
 }
 
 Point3f IkChain::TransformGoalToUnitspace(Point3f goal){
@@ -203,11 +208,14 @@ void IkChain::solve( float  life_count)
 
     goal_point -= base;
     if (goal_point.norm() > this->getMaxLength()) {
-	    goal_point = goal_point.normalized() * this->getMaxLength();
+		std::cout<<"Goal Point out of reachable sphere!"<<std::endl;
+	    goal_point =  ( goal_point.normalized() * this->getMaxLength());
 	}
 	
     current_point = calculate_end_effector();
-
+	printPoint("Base Point:",base);
+	printPoint("Start Point:",current_point);
+	printPoint("Goal Point:",goal_point);
 	// save the first err
     prev_err = (goal_point - current_point).norm();
     curr_err = prev_err;
@@ -240,6 +248,7 @@ void IkChain::solve( float  life_count)
 		    jac_t(i+2, 1) = row_z(0, 1);
 		    jac_t(i+2, 2) = row_z(0, 2);
 		}
+
 		// compute the final jacovian
 	    MatrixXf jac(3, 3*segment_size);
 	    jac = jac_t.transpose();
@@ -375,15 +384,16 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 	
 		//Get the Unitscript for the Unit that holds the segment
 		for (auto seg = segments.begin(); seg !=  segments.end(); ++seg) {
+			seg->alteredInSolve = true;
 			segMentCounter++;
-			Point3f velocity =(*seg).velocity;
-			Point3f rotation = (*seg).get_rotation();
+			Point3f velocity = seg->velocity;
+			Point3f rotation = seg->get_rotation();
 
 			rotation += pAccRotation;
 			pAccRotation-= rotation;
 
 			unit->script->AddAnim(   CUnitScript::ATurn,
-									(int)((*seg).pieceID),  //pieceID 
+									(int)(seg->pieceID),  //pieceID 
 									xAxis,//axis  
 									1.0,//velocity(0,0),// speed
 									rotation[0], //TODO jointclamp this
@@ -391,7 +401,7 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 									);
 
 			unit->script->AddAnim( CUnitScript::ATurn,
-									(int)((*seg).pieceID),  //pieceID 
+									(int)(seg->pieceID),  //pieceID 
 									yAxis,//axis  
 									1.0,//,// speed
 									rotation[1], //TODO jointclamp this
@@ -399,7 +409,7 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 									);
 
 			unit->script->AddAnim(  CUnitScript::ATurn,
-									(int)((*seg).pieceID),  //pieceID 
+									(int)(seg->pieceID),  //pieceID 
 									zAxis,//axis  
 									1.0,// speed
 									rotation[2], //TODO jointclamp this
@@ -411,7 +421,7 @@ void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 
 // computes end_effector up to certain number of segments
 Point3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
-	Point3f ret;
+	Point3f reti;
 
 	int segment_num_to_calc = segment_num;
 	// if default value, compute total end effector
@@ -421,20 +431,20 @@ Point3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
 	// else don't mess with it
 
 	// start with base
-	ret = base;
+	reti = Point3f(0,0,0); //base
 	for(int i=0; i<=segment_num_to_calc; i++) {
 		// add each segments end point vector to the base
-		ret += segments[i].get_end_point();
+		reti += segments[i].get_end_point();
 	}
 	// return calculated end effector
-	return ret;
+	return reti ;
 }
 
 
 //Returns a Jacovian Segment a row of 3 Elements
 Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f  goalPoint, Point3f angle) 
 {
-	Segment s = segments[seg_num];
+	Segment *s = &(segments.at(seg_num));
 	// mini is the amount of angle you go in the direction for numerical calculation
 	float mini = 0.0005;
 
@@ -462,11 +472,12 @@ Matrix<float, 1, 3>  IkChain::compute_jacovian_segment(int seg_num, Vector3f  go
 	AngleAxisf t = AngleAxisf(mini, angle);
 
 	// transform the segment by some delta(theta)
-	s.transform(t);
+	s->transform(t);
 	// new end_effector
 	Point3f new_ee = calculate_end_effector();
+	
 	// reverse the transformation afterwards
-	s.transform(t.inverse());
+	s->transform(t.inverse());
 
 		// difference between the end_effectors
 	// since mini is very small, it's an approximation of

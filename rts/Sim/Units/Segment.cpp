@@ -12,6 +12,7 @@ Segment::Segment()
 	//distance to next point - aka magnitude
 	mag = 0;
 	joint = BALLJOINT;
+	alteredInSolve=false;
 }
 
 
@@ -23,16 +24,18 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  Point3f pUnitNe
 	piece= lPiece;
 
 	float3 basePosition = piece->GetAbsolutePos();
-	pUnitPieceBasePoint= Point3f(basePosition.x,basePosition.y,basePosition.z) ;
+	pUnitPieceBasePoint= Point3f(basePosition.x, basePosition.y, basePosition.z) ;
 
 	//distance to next point - aka magnitude
 	mag = distance(pUnitNextPieceBasePoint,pUnitPieceBasePoint);
-	orgDirVec= (pUnitPieceBasePoint - pUnitNextPieceBasePoint).normalized();
+	orgDirVec= (  pUnitNextPieceBasePoint - pUnitPieceBasePoint);
 
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
 	lastValidRotation= Point3f(0,0,0);
+	
+	alteredInSolve=false;
 }
 
 //Intialize the Segment - TODO at last Segment, hand over maxsize of segment
@@ -48,12 +51,15 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude,
 	//distance to next point - aka magnitude
 	mag = magnitude;
 	
-	orgDirVec= (pUnitPieceBasePoint - Point3f(basePosition.x,basePosition.y - mag,basePosition.z)).normalized();
+	orgDirVec= Point3f(0,-mag, 0);
 	
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
 	lastValidRotation= Point3f(0,0,0);
+	
+	
+	alteredInSolve=false;
 }
 
 //Destructor
@@ -105,7 +111,7 @@ Point3f Segment::get_end_point()
 
 	// start with vector going into the Z direction
 	// transform into the rotation of the segment
-	return (T * (orgDirVec*mag) );
+	return (T * orgDirVec);  //TODO add  orgDirVec
 }
 
 ///Gets the X-Component-  Pitch
@@ -243,7 +249,7 @@ Point3f Segment::get_rotation()
 	z= worldVector[2];
 	angle = T.angle();
 
-	std::cout<<"worldVector"<< x << "  "<< y << "  " << z << "Angle :"<< angle <<std::endl;
+	std::cout<<"Piece"<< pieceID <<" worldVector"<< x << "  "<< y << "  " << z << " Angle : "<< angle <<std::endl;
 
 	float s=sin(angle);
 	float c=cos(angle);
