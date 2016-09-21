@@ -23,17 +23,13 @@ class Segment
 
 
 private:
-		// magnitude of the segment
-		float mag;
+
 		// transformation matrix (rotation) of the segment
 		AngleAxisf T, saved_T, last_T;
 
 		// save the angle when computing the changes
 		Point3f saved_angle;
 		
-		//Original Vector
-		Point3f orgDirVec;
-	
 		// the type of joint the origin of the segment is
 		// connected to
 		JointType joint;
@@ -47,6 +43,12 @@ private:
 
 		
 public:
+		// magnitude of the segment
+		float mag;
+		
+		//Original Direction  Vector
+		Point3f orgDirVec;
+		
 		bool alteredInSolve;
 	
 		// constructors

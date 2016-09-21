@@ -30,6 +30,7 @@ public:
 	enum Axis {xAxis = 0, yAxis = 1, zAxis =2 };
 	///Constructors 
 	IkChain();
+	
 	//Create the segments
 	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID);
 

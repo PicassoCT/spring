@@ -50,19 +50,16 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 	//Get DecendantsNumber
 	for (auto piece = (*parentLocalModelPiece).children.begin(); piece !=  (*parentLocalModelPiece).children.end(); ++piece) 
 		{
-
-		  //we found the last piece of the kinematikChain --unsigned int compared with
+		   //we found the last piece of the kinematikChain --unsigned int compared with
 			if ((*piece)->scriptPieceIndex ==  endPieceNumber){
 			//	std::cout<<"Piece at :"<< depth << " piecnr - > "<<((*piece))->scriptPieceIndex <<std::endl;
 
 				//lets gets size as a float3
 				float3 scale = (*piece)->GetCollisionVolume()->GetScales();
 				
-
 				segments.resize(depth+1);
 				assert(!segments.empty() && (segments.size() == (depth+1)));
 				segments[depth] = Segment((*piece)->scriptPieceIndex, (*piece), scale.y, BALLJOINT);
-
 
 				return true;
 			}
@@ -80,7 +77,6 @@ bool IkChain::recPiecePathExplore(  LocalModelPiece* parentLocalModelPiece,
 
 				Point3f pUnitNextPieceBasePointOffset= Point3f(posBase.x,posBase.y,posBase.z);
 
-
 				assert(!segments.empty() );
 				segments[depth] =Segment((*piece)->scriptPieceIndex, (*piece), pUnitNextPieceBasePointOffset, BALLJOINT);
 
@@ -91,11 +87,17 @@ return false;
 }
 
 bool IkChain::initializePiecePath(LocalModelPiece* startPiece, unsigned int startPieceID,unsigned int endPieceID){
-
+	bool initializationComplete=false;
 	//Check for 
-	if ( startPieceID < 1 || endPieceID < 1 ) return false;
+	if ( startPieceID < 1 || endPieceID < 1 ) return initializationComplete;
 
-	return recPiecePathExplore(startPiece, startPieceID, endPieceID, 0);
+	initializationComplete = recPiecePathExplore(startPiece, startPieceID, endPieceID, 0);
+	
+	//Lets correct the direction of the last piece 
+	segments[segments.size()].orgDirVec = segments[segments.size()-1].orgDirVec.normalized() * segments[segments.size()].mag;
+	
+	
+	return initializationComplete;
 }
 
 IkChain::IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID )
@@ -177,14 +179,14 @@ std::numeric_limits<double>::epsilon())
 }
 //////////////////////////////////////////////////////////////////////
 float IkChain::getMaxLength(){
-	float totalDistance=0;
+	float totalDistance=0.0001;
   //Get DecendantsNumber
 	for (auto seg = segments.begin(); seg != segments.end(); ++seg) 
 	{
 		totalDistance += seg->get_mag();
 	}
 		
-return (totalDistance*0.95);
+return totalDistance;
 }
 
 Point3f IkChain::TransformGoalToUnitspace(Point3f goal){
@@ -208,14 +210,14 @@ void IkChain::solve( float  life_count)
 
     goal_point -= base;
     if (goal_point.norm() > this->getMaxLength()) {
-		std::cout<<"Goal Point out of reachable sphere!"<<std::endl;
-	    goal_point =  ( goal_point.normalized() * this->getMaxLength());
+		std::cout<<"Goal Point out of reachable sphere! Normalied to" << this->getMaxLength()<<std::endl;
+	    goal_point =  ( this->goalPoint.normalized() * this->getMaxLength());
 	}
 	
     current_point = calculate_end_effector();
 	printPoint("Base Point:",base);
 	printPoint("Start Point:",current_point);
-	printPoint("Goal Point:",goal_point);
+	printPoint("Goal  Point:",goal_point);
 	// save the first err
     prev_err = (goal_point - current_point).norm();
     curr_err = prev_err;
@@ -346,18 +348,21 @@ void IkChain::solve( float  life_count)
    }
 
 //Returns the Negated Accumulated Rotation
-Point3f IkChain::GetBoneBaseRotation(){
+Point3f IkChain::GetBoneBaseRotation()
+{
 	Point3f accumulatedRotation = Point3f(0,0,0);
 	float3  modelRot;
 	LocalModelPiece * parent = segments[0].piece;
 	//if the goalPoint is a world coordinate, we need the units rotation out of the picture
   
 	while (parent != NULL){
-		modelRot=segments[0].piece->GetRotation();
-		accumulatedRotation(0,0) -= modelRot.x;
-		accumulatedRotation(1,0) -= modelRot.y;
-		accumulatedRotation(2,0) -= modelRot.z;
-		parent= parent->parent;
+		modelRot= parent->GetRotation();
+		accumulatedRotation[0] -= modelRot.x;
+		accumulatedRotation[1] -= modelRot.y;
+		accumulatedRotation[2] -= modelRot.z;
+		
+		parent = (parent->parent != NULL? parent->parent: NULL);
+			
 	}
 
 	//add unit rotation on top
@@ -377,20 +382,21 @@ return accumulatedRotation;
 void IkChain::applyIkTransformation(MotionBlend motionBlendMethod){
 
 	GoalChanged=false;
-	int segMentCounter = 0;
+
 
 	//The Rotation the Pieces accumulate, so each piece can roate as if in world
 	Point3f pAccRotation= GetBoneBaseRotation();
+	pAccRotation= Point3f(0,0,0);
 	
 		//Get the Unitscript for the Unit that holds the segment
 		for (auto seg = segments.begin(); seg !=  segments.end(); ++seg) {
 			seg->alteredInSolve = true;
-			segMentCounter++;
+
 			Point3f velocity = seg->velocity;
 			Point3f rotation = seg->get_rotation();
 
-			rotation += pAccRotation;
-			pAccRotation-= rotation;
+			rotation -= pAccRotation;
+			pAccRotation+= rotation;
 
 			unit->script->AddAnim(   CUnitScript::ATurn,
 									(int)(seg->pieceID),  //pieceID 
@@ -431,7 +437,7 @@ Point3f IkChain::calculate_end_effector(int segment_num /* = -1 */) {
 	// else don't mess with it
 
 	// start with base
-	reti = Point3f(0,0,0); //base
+	reti = base;
 	for(int i=0; i<=segment_num_to_calc; i++) {
 		// add each segments end point vector to the base
 		reti += segments[i].get_end_point();

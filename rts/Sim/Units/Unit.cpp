@@ -578,6 +578,8 @@ void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ, bool is
 	}
 };
 
+//TODO SetIKTime(float ikID, float time)
+
 //Sets the Per Piece Velocity per Axis
 void CUnit::SetIKPieceSpeed(float ikID, float ikPieceID, float velX, float velY, float velZ){
 	IkChain* ik = getIKChain(ikID);
@@ -963,7 +965,7 @@ void CUnit::Update()
 				IkChain* ikChain =(*ik); 
 
 				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
-						ikChain->solve(100);	//TODO replce fixed framenumber	
+						ikChain->solve(100);	//TODO replce fixed attemptnumber	
 					}
 			}
 	}

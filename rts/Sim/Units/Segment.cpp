@@ -30,6 +30,7 @@ Segment::Segment(unsigned int pieceID, LocalModelPiece* lPiece,  Point3f pUnitNe
 	mag = distance(pUnitNextPieceBasePoint,pUnitPieceBasePoint);
 	orgDirVec= (  pUnitNextPieceBasePoint - pUnitPieceBasePoint);
 
+
 	joint = jt;
 	velocity= Point3f(0,0,0);
 	this->print();
@@ -76,6 +77,7 @@ void Segment::print()
 {
 	std::cout<<"Segment "<<pieceID <<std::endl;
 	std::cout<<"  {"<<std::endl;
+	std::cout<<"   OrgDir: "<<orgDirVec<<std::endl;
 	std::cout<<"   "<<"Base: P("<<pUnitPieceBasePoint<<")" <<std::endl;
 	std::cout<<"   "<<"Length: "<< mag <<std::endl;
 	std::cout<<"  }"<<std::endl;
@@ -235,12 +237,11 @@ void Segment::reset()
 Point3f Segment::get_rotation()
 {
 	const double PI = 3.1415926535897;
-
 	float x, y, z, angle, heading, bank, attitude;
 	
 	
-	Point3f worldVector;
-	worldVector = Point3f(0,0,mag);
+	Point3f worldVector = Point3f(0,0,0);
+	worldVector = orgDirVec;
 	worldVector = T * worldVector;
 
 	worldVector= worldVector.normalized();
@@ -249,7 +250,6 @@ Point3f Segment::get_rotation()
 	z= worldVector[2];
 	angle = T.angle();
 
-	std::cout<<"Piece"<< pieceID <<" worldVector"<< x << "  "<< y << "  " << z << " Angle : "<< angle <<std::endl;
 
 	float s=sin(angle);
 	float c=cos(angle);
@@ -274,10 +274,10 @@ Point3f Segment::get_rotation()
 	heading = atan2(y * s- x * z * t , 1 - (y*y+ z*z ) * t);
 	attitude = asin(x * y * t + z * s) ;
 	bank = atan2(x * s - y * z * t , 1 - (x*x + z*z) * t);
-	std::cout<<"heading "<<heading << "attitude "<<attitude << "bank "<<bank <<std::endl;
-	lastValidRotation[0]=attitude;
+	std::cout<<"Piece "<<this->pieceID<<": heading "<<heading << "attitude "<<attitude << "bank "<<bank <<std::endl;
+	lastValidRotation[0]=bank ;
 	lastValidRotation[1]=heading;
-	lastValidRotation[2]=bank;
+	lastValidRotation[2]=attitude;
 
 	return lastValidRotation;
 }
