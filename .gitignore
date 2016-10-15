@@ -133,6 +133,7 @@ spring.workspace
 #installer downloaded/generated stuff
 /installer/Springlobby/
 /installer/*.exe
+install_manifest.txt
 
 #spring related files when run in portable mode
 /cache
