@@ -124,7 +124,7 @@ Vector3f  Segment::get_up()
 {
 	switch(joint){
 		case BALLJOINT:
-			return T * Vector3f (0, 1, 0);
+			return T*Vector3f(0, 1, 0);
 		case LIMJOINT:
 			return clampJoint(T * Vector3f (0, 1, 0));
 		default:
@@ -140,9 +140,9 @@ Vector3f  Segment::get_z()
 	switch(joint)
 	{
 		case BALLJOINT:
-			return T * Vector3f (0, 0, 1);
+			return T*Vector3f(0,0,1);
 		case LIMJOINT:
-			return clampJoint(T * Vector3f (0, 0, 1));
+			return clampJoint(T*Vector3f(0,0,1));
 		default:
 			return  Vector3f (0, 0, 0);
 	}
