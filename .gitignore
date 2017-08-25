@@ -46,6 +46,12 @@ progress.make
 /build.ninja
 /rules.ninja
 
+#Codelite related
+/.codelite
+sprinbuild.project
+spring.workspace
+
+
 # Visual Studio related
 *.ncb
 *.suo
@@ -127,6 +133,7 @@ progress.make
 #installer downloaded/generated stuff
 /installer/Springlobby/
 /installer/*.exe
+install_manifest.txt
 
 #spring related files when run in portable mode
 /cache

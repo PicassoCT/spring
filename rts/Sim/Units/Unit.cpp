@@ -546,8 +546,9 @@ IkChain* CUnit::getIKChain( float ikID)
 //Create the IKChain and return the ikID
 float CUnit::CreateIKChain(LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID)
 {
+	//ikIds are unique per Unit
 	ikIDPool+= 1;
-	IkChain* kinematIkChain= new IkChain((int)ikIDPool, this, startPiece, startPieceID, endPieceID);
+	IkChain * kinematIkChain= new IkChain((int)ikIDPool, this, startPiece, startPieceID, endPieceID);
 	IkChains.push_back(kinematIkChain);
 	kinematIkChain->print();
 	return kinematIkChain->IkChainID;	
@@ -576,6 +577,8 @@ void CUnit::SetIKGoal(float ikID, float goalX, float goalY, float goalZ, bool is
 	(*ik).print();
 	}
 };
+
+//TODO SetIKTime(float ikID, float time)
 
 //Sets the Per Piece Velocity per Axis
 void CUnit::SetIKPieceSpeed(float ikID, float ikPieceID, float velX, float velY, float velZ){
@@ -960,11 +963,10 @@ void CUnit::Update()
 	if (IkChains.size()> 0){
 			for (auto ik = IkChains.cbegin(); ik != IkChains.cend(); ++ik) {
 				IkChain* ikChain =(*ik); 
-				ikChain->solve(12);	//TODO replce fixed framenumber	
 
-				//if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
-				//		ikChain->solve(12);	//TODO replce fixed framenumber	
-				//	}
+				if (ikChain->IKActive && (ikChain->GoalChanged || ikChain->isWorldCoordinate)) {
+						ikChain->solve(100);	//TODO replce fixed attemptnumber	
+					}
 			}
 	}
 

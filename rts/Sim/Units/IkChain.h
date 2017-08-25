@@ -3,12 +3,6 @@
 #ifndef IKCHAIN
 #define IKCHAIN
 
-#ifdef _WIN32
-	//#define EIGEN_DONT_ALIGN_STATICALLY
-	#define EIGEN_DONT_VECTORIZE
-	#define EIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT
-#endif
-
 #include <vector>
 #include "Segment.h"
 #include "point3f.h"
@@ -18,6 +12,7 @@ using namespace Eigen;
 class LocalModelPiece;
 class LocalModel;
 class CUnit;
+
 
 typedef enum {
 	OVERRIDE,
@@ -35,6 +30,7 @@ public:
 	enum Axis {xAxis = 0, yAxis = 1, zAxis =2 };
 	///Constructors 
 	IkChain();
+	
 	//Create the segments
 	IkChain(int id, CUnit* unit, LocalModelPiece* startPiece, unsigned int startPieceID, unsigned int endPieceID);
 
@@ -62,8 +58,7 @@ public:
 
 	//Solves the Inverse Kinematik Chain for a new goal point
 	//Returns wether a ik-solution could be found
-	bool solve(float frames );
-
+	void solve(float frames );
 	//apply the resolved Kinematics to the actual Model
 	void applyIkTransformation(MotionBlend motionBlendMethod);
 
@@ -92,7 +87,8 @@ public:
 	//The baseposition in WorldCoordinats
 	Point3f base;
 
-
+	//Set the Anglke for the Transformation matrice
+	void SetTransformation(float valX, float valY, float valZ);
 
 	// the goal Point also in World Coordinats
 	Point3f goalPoint;
@@ -108,7 +104,7 @@ public:
 	
 	//Debug function
 	void printPoint( const char* name, float x, float y, float z);
-
+	void printPoint( const char* name, Point3f point);
 	//Destructor
 	~IkChain();
 private:

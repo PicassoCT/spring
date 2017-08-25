@@ -8,6 +8,7 @@
 #include <math.h>
 #include "point3f.h"
 
+
 typedef enum {
 	BALLJOINT,
 	LIMJOINT
@@ -22,14 +23,13 @@ class Segment
 
 
 private:
-		// magnitude of the segment
-		float mag;
+
 		// transformation matrix (rotation) of the segment
 		AngleAxisf T, saved_T, last_T;
 
 		// save the angle when computing the changes
 		Point3f saved_angle;
-
+		
 		// the type of joint the origin of the segment is
 		// connected to
 		JointType joint;
@@ -40,7 +40,17 @@ private:
 		//UnitOrigin Position in UnitSpace
 		Point3f pUnitPieceBasePoint;
 		
-	public:
+
+		
+public:
+		// magnitude of the segment
+		float mag;
+		
+		//Original Direction  Vector
+		Point3f orgDirVec;
+		
+		bool alteredInSolve;
+	
 		// constructors
 		Segment();
 		Segment(unsigned int pieceID, LocalModelPiece* lPiece, float magnitude, JointType jt);
