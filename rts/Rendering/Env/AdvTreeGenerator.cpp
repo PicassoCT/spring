@@ -14,10 +14,7 @@
 #include "Rendering/Textures/Bitmap.h"
 #include "System/Log/ILog.h"
 #include "System/Exceptions.h"
-#include "System/myMath.h"
-
-using std::max;
-using std::min;
+#include "System/SpringMath.h"
 
 constexpr static unsigned int TEX_SIZE_C = 4;
 constexpr static unsigned int TEX_SIZE_X = 256;
@@ -242,7 +239,7 @@ void CAdvTreeGenerator::BindTreeBuffer(unsigned int treeType) const {
 void CAdvTreeGenerator::DrawTreeBuffer(unsigned int treeType) const {
 	treeType = mix(treeType + NUM_TREE_TYPES, treeType - NUM_TREE_TYPES, treeType >= NUM_TREE_TYPES);
 
-	constexpr unsigned int primTypes[] = {GL_QUADS, GL_TRIANGLES};
+	constexpr unsigned int primTypes[] = {GL_TRIANGLES, GL_TRIANGLES};
 
 	const unsigned int pineType = (treeType >= NUM_TREE_TYPES);
 	const unsigned int baseType = treeType - (NUM_TREE_TYPES * pineType);
@@ -252,12 +249,12 @@ void CAdvTreeGenerator::DrawTreeBuffer(unsigned int treeType) const {
 
 
 
-void CAdvTreeGenerator::DrawTrunk(const float3& start, const float3& end, const float3& orto1, const float3& orto2, float size)
+void CAdvTreeGenerator::DrawBushTrunk(const float3& start, const float3& end, const float3& orto1, const float3& orto2, float size)
 {
 	const float3 flatSun = sky->GetLight()->GetLightDir() * XZVector;
 
 	// cylinder faces
-	const int numSides = max(3.0f, size * 10.0f);
+	const int numSides = std::max(3.0f, size * 10.0f);
 
 	for (int a = 0; a < numSides; a++) {
 		const float curAngle = (a    ) / (float)numSides * math::TWOPI;
@@ -272,11 +269,13 @@ void CAdvTreeGenerator::DrawTrunk(const float3& start, const float3& end, const 
 
 		assert((curVertPtr - prvVertPtr) < (MAX_TREE_VERTS - 4 + 1));
 
-		// originally triangles ({v0,v1,v2}, {v3,v2,v1}), but quads allow merging with leaf-data
 		*(curVertPtr++) = {v0, curAngle / math::PI * 0.125f * 0.5f, 0, FwdVector * curColor};
 		*(curVertPtr++) = {v1, curAngle / math::PI * 0.125f * 0.5f, 3, FwdVector * curColor};
+		*(curVertPtr++) = {v2, nxtAngle / math::PI * 0.125f * 0.5f, 0, FwdVector * nxtColor};
+
 		*(curVertPtr++) = {v3, nxtAngle / math::PI * 0.125f * 0.5f, 3, FwdVector * nxtColor};
 		*(curVertPtr++) = {v2, nxtAngle / math::PI * 0.125f * 0.5f, 0, FwdVector * nxtColor};
+		*(curVertPtr++) = {v1, curAngle / math::PI * 0.125f * 0.5f, 3, FwdVector * curColor};
 	}
 }
 
@@ -286,7 +285,7 @@ void CAdvTreeGenerator::GenBushTree(int numBranch, float height, float width)
 	const float3 orto2 = FwdVector;
 	const float baseAngle = math::TWOPI * guRNG.NextFloat();
 
-	DrawTrunk(ZeroVector, UpVector * height, orto1, orto2, width);
+	DrawBushTrunk(ZeroVector, UpVector * height, orto1, orto2, width);
 
 	for (int a = 0; a < numBranch; ++a) {
 		const float angle = baseAngle + (a * 3.88f) + 0.5f * guRNG.NextFloat();
@@ -295,7 +294,7 @@ void CAdvTreeGenerator::GenBushTree(int numBranch, float height, float width)
 		float3 start = UpVector * ((a + 5) * height / (numBranch + 5));
 		float3 dir = (orto1 * std::sin(angle) + orto2 * std::cos(angle)) * XZVector + (UpVector * (0.3f + 0.4f * guRNG.NextFloat()));
 
-		TrunkIterator(start, dir.ANormalize(), length, length * 0.05f, 1);
+		BushTrunkIterator(start, dir.ANormalize(), length, length * 0.05f, 1);
 	}
 
 	for (int a = 0; a < 3; ++a) {
@@ -305,11 +304,11 @@ void CAdvTreeGenerator::GenBushTree(int numBranch, float height, float width)
 		float3 start = UpVector * (height - 0.3f);
 		float3 dir = (orto1 * std::sin(angle) + orto2 * std::cos(angle)) * XZVector + (UpVector * 0.8f);
 
-		TrunkIterator(start, dir.ANormalize(), length, length * 0.05f, 0);
+		BushTrunkIterator(start, dir.ANormalize(), length, length * 0.05f, 0);
 	}
 }
 
-void CAdvTreeGenerator::TrunkIterator(const float3& start, const float3& dir, float length, float size, int depth)
+void CAdvTreeGenerator::BushTrunkIterator(const float3& start, const float3& dir, float length, float size, int depth)
 {
 	float3 orto1;
 	if (dir.dot(UpVector) < 0.9f)
@@ -321,10 +320,10 @@ void CAdvTreeGenerator::TrunkIterator(const float3& start, const float3& dir, fl
 	float3 orto2 = dir.cross(orto1);
 	orto2.ANormalize();
 
-	DrawTrunk(start, start + dir * length, orto1, orto2, size);
+	DrawBushTrunk(start, start + dir * length, orto1, orto2, size);
 
 	if (depth <= 1)
-		CreateLeaves(start, dir, length, orto1, orto2);
+		CreateBushLeaves(start, dir, length, orto1, orto2);
 
 	if (depth == 0)
 		return;
@@ -339,30 +338,33 @@ void CAdvTreeGenerator::TrunkIterator(const float3& start, const float3& dir, fl
 		float3 newBase = start + dir * length * (float(a + 1) / (numTrunks + 1));
 		float3 newDir = dir + orto1 * std::cos(angle) * dirDif + orto2 * std::sin(angle) * dirDif;
 
-		TrunkIterator(newBase, newDir.ANormalize(), newLength, newLength * 0.05f, depth - 1);
+		BushTrunkIterator(newBase, newDir.ANormalize(), newLength, newLength * 0.05f, depth - 1);
 	}
 }
 
-void CAdvTreeGenerator::CreateLeaves(const float3& start, const float3& dir, float length, float3& orto1, float3& orto2)
+void CAdvTreeGenerator::CreateBushLeaves(const float3& start, const float3& dir, float length, float3& orto1, float3& orto2)
 {
 	const float baseRot = math::TWOPI * guRNG.NextFloat();
 	const int numLeaves = (int) length * 10 / MAX_TREE_HEIGHT;
 
 	const float3 flatSun = sky->GetLight()->GetLightDir() * XZVector;
 
-	auto ADD_LEAF = [&](const float3& pos) {
+	const auto ADD_LEAF = [&](const float3& pos) {
 		const float3 npos = (pos * XZVector).ANormalize();
 
 		const float baseTex = (guRNG.NextInt(3)) * 0.125f;
 		const float flipTex = (guRNG.NextInt(2)) * 0.123f;
 		const float col = 0.5f + (npos.dot(flatSun) * 0.3f) + 0.1f * guRNG.NextFloat();
 
-		assert((curVertPtr - prvVertPtr) < (MAX_TREE_VERTS - 4 + 1));
+		assert((curVertPtr - prvVertPtr) < (MAX_TREE_VERTS - (2 * 3) + 1));
 
 		*(curVertPtr++) = {pos, 0.126f + baseTex + flipTex, 0.98f, float3( 0.09f * MAX_TREE_HEIGHT, -0.09f * MAX_TREE_HEIGHT, col)};
 		*(curVertPtr++) = {pos, 0.249f + baseTex - flipTex, 0.98f, float3(-0.09f * MAX_TREE_HEIGHT, -0.09f * MAX_TREE_HEIGHT, col)};
 		*(curVertPtr++) = {pos, 0.249f + baseTex - flipTex, 0.02f, float3(-0.09f * MAX_TREE_HEIGHT,  0.09f * MAX_TREE_HEIGHT, col)};
+
+		*(curVertPtr++) = {pos, 0.249f + baseTex - flipTex, 0.02f, float3(-0.09f * MAX_TREE_HEIGHT,  0.09f * MAX_TREE_HEIGHT, col)};
 		*(curVertPtr++) = {pos, 0.126f + baseTex + flipTex, 0.02f, float3( 0.09f * MAX_TREE_HEIGHT,  0.09f * MAX_TREE_HEIGHT, col)};
+		*(curVertPtr++) = {pos, 0.126f + baseTex + flipTex, 0.98f, float3( 0.09f * MAX_TREE_HEIGHT, -0.09f * MAX_TREE_HEIGHT, col)};
 	};
 
 	for (int a = 0; a < numLeaves + 1; a++) {
@@ -388,9 +390,6 @@ void CAdvTreeGenerator::CreateGranTex(uint8_t* data, int xpos, int ypos, int xsi
 
 	glAttribStatePtr->PushBits(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glAttribStatePtr->DisableBlendMask();
-
-	glAttribStatePtr->AlphaFunc(GL_GREATER, 0.5f);
-	glAttribStatePtr->EnableAlphaTest();
 	glAttribStatePtr->DisableDepthTest();
 
 	glAttribStatePtr->ClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -433,8 +432,9 @@ void CAdvTreeGenerator::CreateGranTexBranch(const float3& start, const float3& e
 	// root-level call, setup
 	if (start == ZeroVector) {
 		shader->Enable();
-		shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, 1.0f, 0.0f, 1.0f, -4.0f, 4.0f, globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, 1.0f, 0.0f, 1.0f, -4.0f, 4.0f, globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniform("u_alpha_test_ctrl", 0.5f, 1.0f, 0.0f, 0.0f); // test > 0.5
 	}
 
 	{
@@ -446,14 +446,20 @@ void CAdvTreeGenerator::CreateGranTexBranch(const float3& start, const float3& e
 		buffer->SafeAppend({start + dir * 0.006f + orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({start + dir * 0.006f - orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({  end                - orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
+
+		buffer->SafeAppend({  end                - orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({  end                + orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
+		buffer->SafeAppend({start + dir * 0.006f + orto * 0.007f, SColor(c.x, c.y, c.z, 1.0f)});
 
 		c = float3(0.18f, 0.18f, 0.07f);
 
 		buffer->SafeAppend({start + orto * length * 0.01f , SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({start - orto * length * 0.01f , SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({  end - orto          * 0.001f, SColor(c.x, c.y, c.z, 1.0f)});
+
+		buffer->SafeAppend({  end - orto          * 0.001f, SColor(c.x, c.y, c.z, 1.0f)});
 		buffer->SafeAppend({  end + orto          * 0.001f, SColor(c.x, c.y, c.z, 1.0f)});
+		buffer->SafeAppend({start + orto * length * 0.01f , SColor(c.x, c.y, c.z, 1.0f)});
 	}
 
 	float tipDist = 0.025f;
@@ -474,7 +480,8 @@ void CAdvTreeGenerator::CreateGranTexBranch(const float3& start, const float3& e
 	}
 
 	if (start == ZeroVector) {
-		buffer->Submit(GL_QUADS);
+		buffer->Submit(GL_TRIANGLES);
+		shader->SetUniform("u_alpha_test_ctrl", 0.0f, 1.0f, 0.0f, 1.0f); // no test
 		shader->Disable();
 	}
 }
@@ -590,9 +597,6 @@ void CAdvTreeGenerator::CreateLeafTex(uint8_t* data, int xpos, int ypos, int xsi
 	glAttribStatePtr->ViewPort(0, 0, TEX_SIZE_X, TEX_SIZE_Y);
 
 	glAttribStatePtr->DisableBlendMask();
-	glAttribStatePtr->EnableAlphaTest();
-	glAttribStatePtr->AlphaFunc(GL_GREATER, 0.5f);
-
 	glAttribStatePtr->ClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glAttribStatePtr->Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -603,8 +607,9 @@ void CAdvTreeGenerator::CreateLeafTex(uint8_t* data, int xpos, int ypos, int xsi
 	Shader::IProgramObject* shader = buffer->GetShader();
 
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(-1.0f, 1.0f, -1.0f, 1.0f, -5.0f, 5.0f, globalRendering->supportClipSpaceControl * 1.0f));
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(-1.0f, 1.0f, -1.0f, 1.0f, -5.0f, 5.0f, globalRendering->supportClipSpaceControl * 1.0f));
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+	shader->SetUniform("u_alpha_test_ctrl", 0.5f, 1.0f, 0.0f, 0.0f); // test > 0.5
 
 	const float baseCol = 0.8f + 0.2f * guRNG.NextFloat();
 
@@ -625,10 +630,14 @@ void CAdvTreeGenerator::CreateLeafTex(uint8_t* data, int xpos, int ypos, int xsi
 		buffer->SafeAppend({leafMat * float3{-0.1f, -0.2f, 0.0f}, 0.0f, 0.0f, SColor(rCol, gCol, bCol, 1.0f)});
 		buffer->SafeAppend({leafMat * float3{-0.1f,  0.2f, 0.0f}, 0.0f, 1.0f, SColor(rCol, gCol, bCol, 1.0f)});
 		buffer->SafeAppend({leafMat * float3{ 0.1f,  0.2f, 0.0f}, 1.0f, 1.0f, SColor(rCol, gCol, bCol, 1.0f)});
+
+		buffer->SafeAppend({leafMat * float3{ 0.1f,  0.2f, 0.0f}, 1.0f, 1.0f, SColor(rCol, gCol, bCol, 1.0f)});
 		buffer->SafeAppend({leafMat * float3{ 0.1f, -0.2f, 0.0f}, 1.0f, 0.0f, SColor(rCol, gCol, bCol, 1.0f)});
+		buffer->SafeAppend({leafMat * float3{-0.1f, -0.2f, 0.0f}, 0.0f, 0.0f, SColor(rCol, gCol, bCol, 1.0f)});
 	}
 
-	buffer->Submit(GL_QUADS);
+	buffer->Submit(GL_TRIANGLES);
+	shader->SetUniform("u_alpha_test_ctrl", 0.0f, 1.0f, 0.0f, 1.0f); // no test
 	shader->Disable();
 
 

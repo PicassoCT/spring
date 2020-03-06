@@ -14,7 +14,7 @@
 class CWeapon;
 struct Command;
 struct BuildInfo;
-
+class LuaMaterial;
 
 class CEventHandler
 {
@@ -79,8 +79,8 @@ class CEventHandler
 		void RenderProjectileDestroyed(const CProjectile* proj);
 
 		void UnitIdle(const CUnit* unit);
-		void UnitCommand(const CUnit* unit, const Command& command);
-		void UnitCmdDone(const CUnit* unit, const Command& command);
+		void UnitCommand(const CUnit* unit, const Command& command, int playerNum, bool fromSynced, bool fromLua);
+		void UnitCmdDone(const CUnit* unit, const Command& command                                              );
 		void UnitDamaged(
 			const CUnit* unit,
 			const CUnit* attacker,
@@ -134,7 +134,7 @@ class CEventHandler
 		                      const CWeapon* weapon, int oldCount);
 
 		bool CommandFallback(const CUnit* unit, const Command& cmd);
-		bool AllowCommand(const CUnit* unit, const Command& cmd, bool fromSynced);
+		bool AllowCommand(const CUnit* unit, const Command& cmd, int playerNum, bool fromSynced, bool fromLua);
 
 		bool AllowUnitCreation(const UnitDef* unitDef, const CUnit* builder, const BuildInfo* buildInfo);
 		bool AllowUnitTransfer(const CUnit* unit, int newTeam, bool capture);
@@ -144,6 +144,7 @@ class CEventHandler
 		bool AllowUnitTransportUnload(const CUnit* transporter, const CUnit* transportee, const float3& unloadPos, bool allowed);
 		bool AllowUnitCloak(const CUnit* unit, const CUnit* enemy);
 		bool AllowUnitDecloak(const CUnit* unit, const CSolidObject* object, const CWeapon* weapon);
+		bool AllowUnitKamikaze(const CUnit* unit, const CUnit* target, bool allowed);
 		bool AllowFeatureCreation(const FeatureDef* featureDef, int allyTeamID, const float3& pos);
 		bool AllowFeatureBuildStep(const CUnit* builder, const CFeature* feature, float part);
 		bool AllowResourceLevel(int teamID, const string& type, float level);
@@ -267,6 +268,7 @@ class CEventHandler
 		void DrawWorldReflection();
 		void DrawWorldRefraction();
 		void DrawGroundPreForward();
+		void DrawGroundPostForward();
 		void DrawGroundPreDeferred();
 		void DrawGroundPostDeferred();
 		void DrawUnitsPostDeferred();
@@ -281,13 +283,14 @@ class CEventHandler
 		bool DrawFeature(const CFeature* feature);
 		bool DrawShield(const CUnit* unit, const CWeapon* weapon);
 		bool DrawProjectile(const CProjectile* projectile);
+		bool DrawMaterial(const LuaMaterial* material);
 
 		/// @brief this UNSYNCED event is generated every GameServer::gameProgressFrameInterval
 		/// it skips network queuing and caching and can be used to calculate the current catchup
 		/// percentage when reconnecting to a running game
 		void GameProgress(int gameFrame);
 
-		void CollectGarbage();
+		void CollectGarbage(bool forced);
 		void DbgTimingInfo(DbgTimingInfoType type, const spring_time start, const spring_time end);
 		void Pong(uint8_t pingTag, const spring_time pktSendTime, const spring_time pktRecvTime);
 		void MetalMapChanged(const int x, const int z);
@@ -500,16 +503,12 @@ inline bool CEventHandler::UnitFeatureCollision(const CUnit* collider, const CFe
 
 
 
-inline void CEventHandler::UnitCommand(const CUnit* unit,
-                                           const Command& command)
+inline void CEventHandler::UnitCommand(const CUnit* unit, const Command& command, int playerNum, bool fromSynced, bool fromLua)
 {
-	ITERATE_UNIT_ALLYTEAM_EVENTCLIENTLIST(UnitCommand, unit, command)
+	ITERATE_UNIT_ALLYTEAM_EVENTCLIENTLIST(UnitCommand, unit, command, playerNum, fromSynced, fromLua)
 }
 
-
-
-inline void CEventHandler::UnitCmdDone(const CUnit* unit,
-                                           const Command& command)
+inline void CEventHandler::UnitCmdDone(const CUnit* unit, const Command& command)
 {
 	ITERATE_UNIT_ALLYTEAM_EVENTCLIENTLIST(UnitCmdDone, unit, command)
 }

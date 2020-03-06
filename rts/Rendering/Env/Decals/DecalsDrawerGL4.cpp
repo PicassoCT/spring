@@ -33,7 +33,7 @@
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 #include "System/Log/ILog.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/TimeProfiler.h"
 #include "System/StringUtil.h"
 #include "System/FileSystem/FileHandler.h"
@@ -359,7 +359,7 @@ static STex LoadTexture(const std::string& name)
 {
 	std::string fileName = name;
 
-	if (FileSystem::GetExtension(fileName) == "")
+	if (FileSystem::GetExtension(fileName).empty())
 		fileName += ".bmp";
 
 	std::string fullName = fileName;
@@ -468,12 +468,12 @@ void CDecalsDrawerGL4::GenerateAtlasTexture()
 	CQuadtreeAtlasAlloc atlas;
 	atlas.SetNonPowerOfTwo(true);
 	atlas.SetMaxSize(globalRendering->maxTextureSize, globalRendering->maxTextureSize);
-	for (auto it = textures.begin(); it != textures.end(); ++it) {
-		if (it->second.id == 0)
+	for (const auto& texture: textures) {
+		if (texture.second.id == 0)
 			continue;
 
 		const float maxSize = 1024; //512;
-		int2 size = it->second.size;
+		int2 size = texture.second.size;
 		if (size.x > maxSize) {
 			size.y = size.y * (maxSize / size.x);
 			size.x = maxSize;
@@ -483,7 +483,7 @@ void CDecalsDrawerGL4::GenerateAtlasTexture()
 			size.y = maxSize;
 		}
 
-		atlas.AddEntry(it->first, size);
+		atlas.AddEntry(texture.first, size);
 	}
 	/*bool success =*/ atlas.Allocate();
 
@@ -530,8 +530,8 @@ void CDecalsDrawerGL4::GenerateAtlasTexture()
 
 		assert(!decalShader->IsBound());
 		shader->Enable();
-		shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, atlasSize.x, 0.0f, atlasSize.y, -1.0f, 1.0f, globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, atlasSize.x, 0.0f, atlasSize.y, -1.0f, 1.0f, globalRendering->supportClipSpaceControl * 1.0f));
 
 		for (auto& p: textures) {
 			if (p.second.id == 0)
@@ -667,7 +667,7 @@ void CDecalsDrawerGL4::ViewResize()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, globalRendering->viewSizeX, globalRendering->viewSizeY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, globalRendering->viewSizeX, globalRendering->viewSizeY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
 }
 
 
@@ -778,8 +778,6 @@ void CDecalsDrawerGL4::Draw()
 	glAttribStatePtr->EnableDepthClamp();
 	// glAttribStatePtr->EnableDepthTest();
 	glAttribStatePtr->DisableDepthTest();
-	glAttribStatePtr->EnableAlphaTest();
-	glAttribStatePtr->AlphaFunc(GL_LESS, 1.0f);
 
 
 	const CMatrix44f& viewProjMat    = camera->GetViewProjectionMatrix();
@@ -808,12 +806,7 @@ void CDecalsDrawerGL4::Draw()
 	glSpringBindTextures(0, textures.size(), &textures[0]);
 
 	if (shadowHandler.ShadowsLoaded()) {
-		CMatrix44f shadowMat = shadowHandler.GetShadowViewMatrix();
-		constexpr float3 offsetVec = {0.5f, 0.5f, 0.0f};
-
-		shadowMat.GetPos() += offsetVec;
-
-		decalShader->SetUniformMatrix4x4("shadowMatrix", false, shadowMat.m);
+		decalShader->SetUniformMatrix4x4("shadowMatrix", false, shadowHandler.GetShadowViewMatrixRaw());
 		decalShader->SetUniform("shadowDensity", sunLighting->groundShadowDensity);
 	}
 
@@ -826,7 +819,6 @@ void CDecalsDrawerGL4::Draw()
 	glAttribStatePtr->CullFace(GL_BACK);
 	glAttribStatePtr->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glAttribStatePtr->DisableBlendMask();
-	glAttribStatePtr->DisableAlphaTest();
 
 	decalShader->Disable();
 	//if (setTimerQuery) drawTimerQuery.Stop();
@@ -884,7 +876,7 @@ void CDecalsDrawerGL4::UpdateDecalsVBO()
 
 void CDecalsDrawerGL4::Update()
 {
-	SCOPED_TIMER("Update::Update::DecalsDrawerGL4");
+	SCOPED_TIMER("Update::DecalsDrawerGL4");
 	UpdateOverlap();
 	OptimizeGroups();
 	UpdateDecalsVBO();
@@ -899,8 +891,7 @@ void CDecalsDrawerGL4::GameFrame(int n)
 		Decal& d = decals[idx];
 		assert((d.owner == nullptr) && (d.type == Decal::BUILDING));
 
-		d.alpha -= d.alphaFalloff;
-		if (d.alpha > 0.f) {
+		if ((d.alpha -= d.alphaFalloff) > 0.0f) {
 			decalsToUpdate.push_back(idx);
 		} else {
 			FreeDecal(idx);
@@ -1130,10 +1121,13 @@ static void DRAW_DECAL(const CDecalsDrawerGL4::Decal* d, GL::RenderDataBufferTC*
 	const float4 tc  = d->texOffsets;
 	const SColor  c  = {1.0f, 1.0f, 1.0f, 1.0f};
 
-	rdb->SafeAppend({m * -ds1, tc[0], tc[1], c});
-	rdb->SafeAppend({m *  ds2, tc[2], tc[1], c});
-	rdb->SafeAppend({m *  ds1, tc[2], tc[3], c});
-	rdb->SafeAppend({m * -ds2, tc[0], tc[3], c});
+	rdb->SafeAppend({m * -ds1, tc[0], tc[1], c}); // bl
+	rdb->SafeAppend({m *  ds2, tc[2], tc[1], c}); // br
+	rdb->SafeAppend({m *  ds1, tc[2], tc[3], c}); // tr
+
+	rdb->SafeAppend({m *  ds1, tc[2], tc[3], c}); // tr
+	rdb->SafeAppend({m * -ds2, tc[0], tc[3], c}); // tl
+	rdb->SafeAppend({m * -ds1, tc[0], tc[1], c}); // bl
 }
 
 
@@ -1150,7 +1144,7 @@ void CDecalsDrawerGL4::UpdateOverlap()
 		return; // early-exit before GL stuff is done
 
 	fboOverlap.Bind();
-	glAttribStatePtr->PushBits(GL_ALL_ATTRIB_BITS);
+	glAttribStatePtr->PushBits(GL_VIEWPORT_BIT | GL_ENABLE_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	glAttribStatePtr->ViewPort(0, 0, OVERLAP_TEST_TEXTURE_SIZE, OVERLAP_TEST_TEXTURE_SIZE);
 
@@ -1158,8 +1152,6 @@ void CDecalsDrawerGL4::UpdateOverlap()
 
 	glAttribStatePtr->DisableBlendMask();
 	glAttribStatePtr->DisableDepthTest();
-	glAttribStatePtr->EnableAlphaTest();
-	glAttribStatePtr->AlphaFunc(GL_GREATER, 0.0f);
 	glAttribStatePtr->EnableStencilTest();
 	glAttribStatePtr->StencilMask(0xFF);
 
@@ -1170,8 +1162,9 @@ void CDecalsDrawerGL4::UpdateOverlap()
 
 		assert(!decalShader->IsBound());
 		shader->Enable();
-		shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, mapDims.mapx * SQUARE_SIZE, 0.0f, mapDims.mapy * SQUARE_SIZE, -1.0f, 1.0f, globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj(0.0f, mapDims.mapx * SQUARE_SIZE, 0.0f, mapDims.mapy * SQUARE_SIZE, -1.0f, 1.0f, globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniform("u_alpha_test_ctrl", 0.0f, 1.0f, 0.0f, 0.0f); // test > 0.0
 
 
 		// either initialize or check queries
@@ -1194,6 +1187,7 @@ void CDecalsDrawerGL4::UpdateOverlap()
 			UpdateOverlap_GenerateQueries(candidatesForOverlap, buffer);
 		}
 
+		shader->SetUniform("u_alpha_test_ctrl", 0.0f, 0.0f, 0.0f, 1.0f); // no test
 		shader->Disable();
 	}
 
@@ -1294,7 +1288,7 @@ void CDecalsDrawerGL4::UpdateOverlap_Initialize(GL::RenderDataBufferTC* rdb)
 			DRAW_DECAL(&d, rdb);
 		}
 
-		rdb->Submit(GL_QUADS);
+		rdb->Submit(GL_TRIANGLES);
 	}
 
 	#if 0
@@ -1320,7 +1314,7 @@ void CDecalsDrawerGL4::UpdateOverlap_GenerateQueries(const std::vector<int>& can
 		glBeginQuery(GL_ANY_SAMPLES_PASSED_CONSERVATIVE, q);
 
 		DRAW_DECAL(&decals[i], rdb);
-		rdb->Submit(GL_QUADS);
+		rdb->Submit(GL_TRIANGLES);
 
 		glEndQuery(GL_ANY_SAMPLES_PASSED_CONSERVATIVE);
 		waitingOverlapGlQueries.emplace_back(i, q);
@@ -1385,7 +1379,7 @@ std::vector<int> CDecalsDrawerGL4::UpdateOverlap_CheckQueries(GL::RenderDataBuff
 		numFreedDecals++;
 	}
 
-	rdb->Submit(GL_QUADS);
+	rdb->Submit(GL_TRIANGLES);
 
 
 	candidatesForRemoval.erase(candidatesForRemoval.begin(), eraseIt);

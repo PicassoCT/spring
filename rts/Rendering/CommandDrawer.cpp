@@ -5,11 +5,13 @@
 #include "Game/Camera.h"
 #include "Game/GameHelper.h"
 #include "Game/UI/CommandColors.h"
+#include "Game/UI/MiniMap.h"
 #include "Game/WaitCommandsAI.h"
 #include "Map/Ground.h"
 #include "Rendering/GL/glExtra.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/RenderDataBuffer.hpp"
+#include "Rendering/GL/WideLineAdapter.hpp"
 #include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureHandler.h"
 #include "Sim/Units/CommandAI/Command.h"
@@ -22,7 +24,7 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitHandler.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Log/ILog.h"
 
 static const CUnit* GetTrackableUnit(const CUnit* caiOwner, const CUnit* cmdUnit)
@@ -43,25 +45,30 @@ CommandDrawer* CommandDrawer::GetInstance() {
 
 
 
-void CommandDrawer::Draw(const CCommandAI* cai) const {
+void CommandDrawer::Draw(const CCommandAI* cai, bool onMiniMap) const {
 	GL::RenderDataBufferC* buffer = GL::GetRenderBufferC();
 	Shader::IProgramObject* shader = buffer->GetShader();
 
+	const CMatrix44f& projMat = onMiniMap? minimap->GetProjMat(0): camera->GetProjectionMatrix();
+	const CMatrix44f& viewMat = onMiniMap? minimap->GetViewMat(0): camera->GetViewMatrix();
+
+	const auto& DrawBuffer = [&viewMat, &projMat](GL::RenderDataBufferC* rdb, Shader::IProgramObject* ipo) {
+		// hand off all surface circles
+		ipo->Enable();
+		ipo->SetUniformMatrix4x4<float>("u_movi_mat", false, viewMat);
+		ipo->SetUniformMatrix4x4<float>("u_proj_mat", false, projMat);
+		rdb->Submit(GL_LINES);
+		ipo->Disable();
+	};
+
 	// note: {Air,Builder}CAI inherit from MobileCAI, so test that last
-	if ((dynamic_cast<const     CAirCAI*>(cai)) != nullptr) {     DrawAirCAICommands(static_cast<const     CAirCAI*>(cai), buffer); return; }
-	if ((dynamic_cast<const CBuilderCAI*>(cai)) != nullptr) { DrawBuilderCAICommands(static_cast<const CBuilderCAI*>(cai), buffer); return; }
-	if ((dynamic_cast<const CFactoryCAI*>(cai)) != nullptr) { DrawFactoryCAICommands(static_cast<const CFactoryCAI*>(cai), buffer); return; }
-	if ((dynamic_cast<const  CMobileCAI*>(cai)) != nullptr) {  DrawMobileCAICommands(static_cast<const  CMobileCAI*>(cai), buffer); return; }
+	if (dynamic_cast<const     CAirCAI*>(cai) != nullptr) {     DrawAirCAICommands(static_cast<const     CAirCAI*>(cai), buffer); DrawBuffer(buffer, shader); return; }
+	if (dynamic_cast<const CBuilderCAI*>(cai) != nullptr) { DrawBuilderCAICommands(static_cast<const CBuilderCAI*>(cai), buffer); DrawBuffer(buffer, shader); return; }
+	if (dynamic_cast<const CFactoryCAI*>(cai) != nullptr) { DrawFactoryCAICommands(static_cast<const CFactoryCAI*>(cai), buffer); DrawBuffer(buffer, shader); return; }
+	if (dynamic_cast<const  CMobileCAI*>(cai) != nullptr) {  DrawMobileCAICommands(static_cast<const  CMobileCAI*>(cai), buffer); DrawBuffer(buffer, shader); return; }
 
 	DrawCommands(cai, buffer);
-
-	// hand off all surface circles
-	// TODO: grab the minimap transform
-	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
-	buffer->Submit(GL_LINES);
-	shader->Disable();
+	DrawBuffer(buffer, shader);
 }
 
 
@@ -71,12 +78,11 @@ void CommandDrawer::AddLuaQueuedUnit(const CUnit* unit) {
 	luaQueuedUnitSet.insert(unit->id);
 }
 
-void CommandDrawer::DrawLuaQueuedUnitSetCommands() const
+void CommandDrawer::DrawLuaQueuedUnitSetCommands(bool onMiniMap) const
 {
 	if (luaQueuedUnitSet.empty())
 		return;
 
-	glDisable(GL_TEXTURE_2D);
 	glAttribStatePtr->DisableDepthTest();
 
 	lineDrawer.Configure(cmdColors.UseColorRestarts(),
@@ -84,22 +90,21 @@ void CommandDrawer::DrawLuaQueuedUnitSetCommands() const
 	                     cmdColors.restart,
 	                     cmdColors.RestartAlpha());
 	lineDrawer.SetupLineStipple();
+	lineDrawer.SetWidth(CLineDrawer::LineWidth::QueuedCmd);
 
 	glAttribStatePtr->EnableBlendMask();
 	glAttribStatePtr->BlendFunc((GLenum)cmdColors.QueuedBlendSrc(), (GLenum)cmdColors.QueuedBlendDst());
 
-	glAttribStatePtr->LineWidth(cmdColors.QueuedLineWidth());
-
-	for (auto ui = luaQueuedUnitSet.cbegin(); ui != luaQueuedUnitSet.cend(); ++ui) {
-		const CUnit* unit = unitHandler.GetUnit(*ui);
+	for (const int unitID: luaQueuedUnitSet) {
+		const CUnit* unit = unitHandler.GetUnit(unitID);
 
 		if (unit == nullptr || unit->commandAI == nullptr)
 			continue;
 
-		Draw(unit->commandAI);
+		Draw(unit->commandAI, onMiniMap);
 	}
 
-	glAttribStatePtr->LineWidth(1.0f);
+	lineDrawer.SetWidth(CLineDrawer::LineWidth::Default);
 	glAttribStatePtr->EnableDepthTest();
 }
 
@@ -113,23 +118,23 @@ void CommandDrawer::DrawCommands(const CCommandAI* cai, GL::RenderDataBufferC* r
 	if (owner->selfDCountdown != 0)
 		lineDrawer.DrawIconAtLastPos(CMD_SELFD);
 
-	for (auto ci = commandQue.begin(); ci != commandQue.end(); ++ci) {
-		const int cmdID = ci->GetID();
+	for (const auto& command: commandQue) {
+		const int cmdID = command.GetID();
 
 		switch (cmdID) {
 			case CMD_ATTACK:
 			case CMD_MANUALFIRE: {
-				if (ci->GetNumParams() == 1) {
-					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+				if (command.GetNumParams() == 1) {
+					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 					if (unit != nullptr)
 						lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.attack);
 
 				} else {
-					assert(ci->GetNumParams() >= 3);
+					assert(command.GetNumParams() >= 3);
 
-					const float x = ci->GetParam(0);
-					const float z = ci->GetParam(2);
+					const float x = command.GetParam(0);
+					const float z = command.GetParam(2);
 					const float y = CGround::GetHeightReal(x, z, false) + 3.0f;
 
 					lineDrawer.DrawLineAndIcon(cmdID, float3(x, y, z), cmdColors.attack);
@@ -137,14 +142,14 @@ void CommandDrawer::DrawCommands(const CCommandAI* cai, GL::RenderDataBufferC* r
 			} break;
 
 			case CMD_WAIT: {
-				DrawWaitIcon(*ci);
+				DrawWaitIcon(command);
 			} break;
 			case CMD_SELFD: {
 				lineDrawer.DrawIconAtLastPos(cmdID);
 			} break;
 
 			default: {
-				DrawDefaultCommand(*ci, owner, rdb);
+				DrawDefaultCommand(command, owner, rdb);
 			} break;
 		}
 	}
@@ -162,32 +167,32 @@ void CommandDrawer::DrawAirCAICommands(const CAirCAI* cai, GL::RenderDataBufferC
 	if (owner->selfDCountdown != 0)
 		lineDrawer.DrawIconAtLastPos(CMD_SELFD);
 
-	for (auto ci = commandQue.begin(); ci != commandQue.end(); ++ci) {
-		const int cmdID = ci->GetID();
+	for (const auto& command: commandQue) {
+		const int cmdID = command.GetID();
 
 		switch (cmdID) {
 			case CMD_MOVE: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.move);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.move);
 			} break;
 			case CMD_FIGHT: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.fight);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.fight);
 			} break;
 			case CMD_PATROL: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.patrol);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.patrol);
 			} break;
 
 			case CMD_ATTACK: {
-				if (ci->GetNumParams() == 1) {
-					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+				if (command.GetNumParams() == 1) {
+					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 					if (unit != nullptr)
 						lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.attack);
 
 				} else {
-					assert(ci->GetNumParams() >= 3);
+					assert(command.GetNumParams() >= 3);
 
-					const float x = ci->GetParam(0);
-					const float z = ci->GetParam(2);
+					const float x = command.GetParam(0);
+					const float z = command.GetParam(2);
 					const float y = CGround::GetHeightReal(x, z, false) + 3.0f;
 
 					lineDrawer.DrawLineAndIcon(cmdID, float3(x, y, z), cmdColors.attack);
@@ -195,16 +200,16 @@ void CommandDrawer::DrawAirCAICommands(const CAirCAI* cai, GL::RenderDataBufferC
 			} break;
 
 			case CMD_AREA_ATTACK: {
-				const float3& endPos = ci->GetPos(0);
+				const float3& endPos = command.GetPos(0);
 
 				lineDrawer.DrawLineAndIcon(cmdID, endPos, cmdColors.attack);
 				lineDrawer.Break(endPos, cmdColors.attack);
-				glSurfaceCircleRB(rdb, {endPos, ci->GetParam(3)}, cmdColors.attack, 20.0f);
+				glSurfaceCircle(rdb, {endPos, command.GetParam(3)}, cmdColors.attack, 20.0f);
 				lineDrawer.RestartWithColor(cmdColors.attack);
 			} break;
 
 			case CMD_GUARD: {
-				const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+				const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 				if (unit != nullptr)
 					lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.guard);
@@ -212,14 +217,14 @@ void CommandDrawer::DrawAirCAICommands(const CAirCAI* cai, GL::RenderDataBufferC
 			} break;
 
 			case CMD_WAIT: {
-				DrawWaitIcon(*ci);
+				DrawWaitIcon(command);
 			} break;
 			case CMD_SELFD: {
 				lineDrawer.DrawIconAtLastPos(cmdID);
 			} break;
 
 			default: {
-				DrawDefaultCommand(*ci, owner, rdb);
+				DrawDefaultCommand(command, owner, rdb);
 			} break;
 		}
 	}
@@ -253,7 +258,7 @@ void CommandDrawer::DrawBuilderCAICommands(const CBuilderCAI* cai, GL::RenderDat
 				// draw metal extraction range
 				if (bi.def->extractRange > 0.0f) {
 					lineDrawer.Break(bi.pos, cmdColors.build);
-					glSurfaceCircleRB(rdb, {bi.pos, bi.def->extractRange}, cmdColors.rangeExtract, 40.0f);
+					glSurfaceCircle(rdb, {bi.pos, bi.def->extractRange}, cmdColors.rangeExtract, 40.0f);
 					lineDrawer.Restart();
 				}
 			}
@@ -284,7 +289,7 @@ void CommandDrawer::DrawBuilderCAICommands(const CBuilderCAI* cai, GL::RenderDat
 
 				lineDrawer.DrawLineAndIcon(cmdID, endPos, cmdColors.restore);
 				lineDrawer.Break(endPos, cmdColors.restore);
-				glSurfaceCircleRB(rdb, {endPos, ci.GetParam(3)}, cmdColors.restore, 20.0f);
+				glSurfaceCircle(rdb, {endPos, ci.GetParam(3)}, cmdColors.restore, 20.0f);
 				lineDrawer.RestartWithColor(cmdColors.restore);
 			} break;
 
@@ -316,7 +321,7 @@ void CommandDrawer::DrawBuilderCAICommands(const CBuilderCAI* cai, GL::RenderDat
 
 					lineDrawer.DrawLineAndIcon(cmdID, endPos, color);
 					lineDrawer.Break(endPos, color);
-					glSurfaceCircleRB(rdb, {endPos, ci.GetParam(3)}, color, 20.0f);
+					glSurfaceCircle(rdb, {endPos, ci.GetParam(3)}, color, 20.0f);
 					lineDrawer.RestartWithColor(color);
 				} else {
 					assert(ci.GetParam(0) >= 0.0f);
@@ -348,7 +353,7 @@ void CommandDrawer::DrawBuilderCAICommands(const CBuilderCAI* cai, GL::RenderDat
 
 					lineDrawer.DrawLineAndIcon(cmdID, endPos, color);
 					lineDrawer.Break(endPos, color);
-					glSurfaceCircleRB(rdb, {endPos, ci.GetParam(3)}, color, 20.0f);
+					glSurfaceCircle(rdb, {endPos, ci.GetParam(3)}, color, 20.0f);
 					lineDrawer.RestartWithColor(color);
 				} else {
 					if (ci.GetNumParams() >= 1) {
@@ -459,7 +464,7 @@ void CommandDrawer::DrawFactoryCAICommands(const CFactoryCAI* cai, GL::RenderDat
 			// draw metal extraction range
 			if (bi.def->extractRange > 0.0f) {
 				lineDrawer.Break(bi.pos, cmdColors.build);
-				glSurfaceCircleRB(rdb, {bi.pos, bi.def->extractRange}, cmdColors.rangeExtract, 40.0f);
+				glSurfaceCircle(rdb, {bi.pos, bi.def->extractRange}, cmdColors.rangeExtract, 40.0f);
 				lineDrawer.Restart();
 			}
 		}
@@ -478,35 +483,35 @@ void CommandDrawer::DrawMobileCAICommands(const CMobileCAI* cai, GL::RenderDataB
 	if (owner->selfDCountdown != 0)
 		lineDrawer.DrawIconAtLastPos(CMD_SELFD);
 
-	for (auto ci = commandQue.begin(); ci != commandQue.end(); ++ci) {
-		const int cmdID = ci->GetID();
+	for (const auto& command: commandQue) {
+		const int cmdID = command.GetID();
 
 		switch (cmdID) {
 			case CMD_MOVE: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.move);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.move);
 			} break;
 			case CMD_PATROL: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.patrol);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.patrol);
 			} break;
 			case CMD_FIGHT: {
-				if (ci->GetNumParams() >= 3)
-					lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.fight);
+				if (command.GetNumParams() >= 3)
+					lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.fight);
 
 			} break;
 
 			case CMD_ATTACK:
 			case CMD_MANUALFIRE: {
-				if (ci->GetNumParams() == 1) {
-					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+				if (command.GetNumParams() == 1) {
+					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 					if (unit != nullptr)
 						lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.attack);
 
 				}
 
-				if (ci->GetNumParams() >= 3) {
-					const float x = ci->GetParam(0);
-					const float z = ci->GetParam(2);
+				if (command.GetNumParams() >= 3) {
+					const float x = command.GetParam(0);
+					const float z = command.GetParam(2);
 					const float y = CGround::GetHeightReal(x, z, false) + 3.0f;
 
 					lineDrawer.DrawLineAndIcon(cmdID, float3(x, y, z), cmdColors.attack);
@@ -514,7 +519,7 @@ void CommandDrawer::DrawMobileCAICommands(const CMobileCAI* cai, GL::RenderDataB
 			} break;
 
 			case CMD_GUARD: {
-				const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+				const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 				if (unit != nullptr)
 					lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.guard);
@@ -522,20 +527,20 @@ void CommandDrawer::DrawMobileCAICommands(const CMobileCAI* cai, GL::RenderDataB
 			} break;
 
 			case CMD_LOAD_ONTO: {
-				const CUnit* unit = unitHandler.GetUnitUnsafe(ci->GetParam(0));
+				const CUnit* unit = unitHandler.GetUnitUnsafe(command.GetParam(0));
 				lineDrawer.DrawLineAndIcon(cmdID, unit->pos, cmdColors.load);
 			} break;
 
 			case CMD_LOAD_UNITS: {
-				if (ci->GetNumParams() == 4) {
-					const float3& endPos = ci->GetPos(0);
+				if (command.GetNumParams() == 4) {
+					const float3& endPos = command.GetPos(0);
 
 					lineDrawer.DrawLineAndIcon(cmdID, endPos, cmdColors.load);
 					lineDrawer.Break(endPos, cmdColors.load);
-					glSurfaceCircleRB(rdb, {endPos, ci->GetParam(3)}, cmdColors.load, 20.0f);
+					glSurfaceCircle(rdb, {endPos, command.GetParam(3)}, cmdColors.load, 20.0f);
 					lineDrawer.RestartWithColor(cmdColors.load);
 				} else {
-					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(ci->GetParam(0)));
+					const CUnit* unit = GetTrackableUnit(owner, unitHandler.GetUnit(command.GetParam(0)));
 
 					if (unit != nullptr)
 						lineDrawer.DrawLineAndIcon(cmdID, unit->GetObjDrawErrorPos(owner->allyteam), cmdColors.load);
@@ -544,28 +549,28 @@ void CommandDrawer::DrawMobileCAICommands(const CMobileCAI* cai, GL::RenderDataB
 			} break;
 
 			case CMD_UNLOAD_UNITS: {
-				if (ci->GetNumParams() == 5) {
-					const float3& endPos = ci->GetPos(0);
+				if (command.GetNumParams() == 5) {
+					const float3& endPos = command.GetPos(0);
 
 					lineDrawer.DrawLineAndIcon(cmdID, endPos, cmdColors.unload);
 					lineDrawer.Break(endPos, cmdColors.unload);
-					glSurfaceCircleRB(rdb, {endPos, ci->GetParam(3)}, cmdColors.unload, 20.0f);
+					glSurfaceCircle(rdb, {endPos, command.GetParam(3)}, cmdColors.unload, 20.0f);
 					lineDrawer.RestartWithColor(cmdColors.unload);
 				}
 			} break;
 
 			case CMD_UNLOAD_UNIT: {
-				lineDrawer.DrawLineAndIcon(cmdID, ci->GetPos(0), cmdColors.unload);
+				lineDrawer.DrawLineAndIcon(cmdID, command.GetPos(0), cmdColors.unload);
 			} break;
 			case CMD_WAIT: {
-				DrawWaitIcon(*ci);
+				DrawWaitIcon(command);
 			} break;
 			case CMD_SELFD: {
 				lineDrawer.DrawIconAtLastPos(cmdID);
 			} break;
 
 			default: {
-				DrawDefaultCommand(*ci, owner, rdb);
+				DrawDefaultCommand(command, owner, rdb);
 			} break;
 		}
 	}
@@ -597,7 +602,7 @@ void CommandDrawer::DrawDefaultCommand(const Command& c, const CUnit* owner, GL:
 			} else {
 				lineDrawer.DrawLineAndIcon(dd->cmdIconID, endPos, dd->color);
 				lineDrawer.Break(endPos, dd->color);
-				glSurfaceCircleRB(rdb, {endPos, c.GetParam(3)}, dd->color, 20.0f);
+				glSurfaceCircle(rdb, {endPos, c.GetParam(3)}, dd->color, 20.0f);
 				lineDrawer.RestartWithColor(dd->color);
 			}
 
@@ -624,6 +629,7 @@ void CommandDrawer::DrawQueuedBuildingSquaresAW(const CBuilderCAI* cai) const
 
 	GL::RenderDataBufferC* buffer = GL::GetRenderBufferC();
 	Shader::IProgramObject* shader = buffer->GetShader();
+	GL::WideLineAdapterC* wla = GL::GetWideLineAdapterC();
 
 	assert(shader->IsBound());
 
@@ -655,22 +661,22 @@ void CommandDrawer::DrawQueuedBuildingSquaresAW(const CBuilderCAI* cai) const
 		const float z2 = bi.pos.z + zsize;
 
 		// above-water verts
-		buffer->SafeAppend({{x1, h + 1.0f, z1}, {buildQueueSquareColor}});
-		buffer->SafeAppend({{x1, h + 1.0f, z2}, {buildQueueSquareColor}});
-		buffer->SafeAppend({{x2, h + 1.0f, z2}, {buildQueueSquareColor}});
-		buffer->SafeAppend({{x2, h + 1.0f, z1}, {buildQueueSquareColor}});
+		wla->SafeAppend({{x1, h + 1.0f, z1}, {buildQueueSquareColor}});
+		wla->SafeAppend({{x1, h + 1.0f, z2}, {buildQueueSquareColor}});
+		wla->SafeAppend({{x2, h + 1.0f, z2}, {buildQueueSquareColor}});
+		wla->SafeAppend({{x2, h + 1.0f, z1}, {buildQueueSquareColor}});
 
 		if (bi.pos.y >= 0.0f)
 			continue;
 
 		// below-water verts
-		buffer->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
 	}
 
-	buffer->Submit(GL_QUADS);
+	wla->Submit(GL_QUADS);
 }
 
 void CommandDrawer::DrawQueuedBuildingSquaresUW(const CBuilderCAI* cai) const
@@ -680,6 +686,7 @@ void CommandDrawer::DrawQueuedBuildingSquaresUW(const CBuilderCAI* cai) const
 
 	GL::RenderDataBufferC* buffer = GL::GetRenderBufferC();
 	Shader::IProgramObject* shader = buffer->GetShader();
+	GL::WideLineAdapterC* wla = GL::GetWideLineAdapterC();
 
 	assert(shader->IsBound());
 
@@ -710,13 +717,13 @@ void CommandDrawer::DrawQueuedBuildingSquaresUW(const CBuilderCAI* cai) const
 		const float x2 = bi.pos.x + xsize;
 		const float z2 = bi.pos.z + zsize;
 
-		buffer->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
 	}
 
-	buffer->Submit(GL_QUADS);
+	wla->Submit(GL_QUADS);
 	#endif
 
 
@@ -745,17 +752,17 @@ void CommandDrawer::DrawQueuedBuildingSquaresUW(const CBuilderCAI* cai) const
 		const float z2 = bi.pos.z + zsize;
 
 		// vertical lines for gauging depth
-		buffer->SafeAppend({{x1, h   , z1}, {0.0f, 0.0f, 1.0f, 0.5f}});
-		buffer->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, h   , z1}, {0.0f, 0.0f, 1.0f, 0.5f}});
-		buffer->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x2, h   , z2}, {0.0f, 0.0f, 1.0f, 0.5f}});
-		buffer->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
-		buffer->SafeAppend({{x1, h   , z2}, {0.0f, 0.0f, 1.0f, 0.5f}});
-		buffer->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, h   , z1}, {0.0f, 0.0f, 1.0f, 0.5f}});
+		wla->SafeAppend({{x1, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, h   , z1}, {0.0f, 0.0f, 1.0f, 0.5f}});
+		wla->SafeAppend({{x2, 0.0f, z1}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x2, h   , z2}, {0.0f, 0.0f, 1.0f, 0.5f}});
+		wla->SafeAppend({{x2, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
+		wla->SafeAppend({{x1, h   , z2}, {0.0f, 0.0f, 1.0f, 0.5f}});
+		wla->SafeAppend({{x1, 0.0f, z2}, {0.0f, 0.5f, 1.0f, 1.0f}});
 	}
 
-	buffer->Submit(GL_LINES);
+	wla->Submit(GL_LINES);
 }
 
 

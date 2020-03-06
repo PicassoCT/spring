@@ -27,11 +27,9 @@ Gui::Gui()
  , inputCon(input.AddHandler(std::bind(&Gui::HandleEvent, this, std::placeholders::_1)))
 {
 	{
-		vfsHandler->AddArchive(CArchiveScanner::GetSpringBaseContentName(), false);
 		shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/GuiVertProg4.glsl", "", GL_VERTEX_SHADER));
 		shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/GuiFragProg4.glsl", "", GL_FRAGMENT_SHADER));
 		shader->Link();
-		vfsHandler->RemoveArchive(CArchiveScanner::GetSpringBaseContentName());
 	}
 	{
 		const std::string& name = shader->GetName();
@@ -52,8 +50,8 @@ Gui::Gui()
 		shader->SetUniformLocation("elemColor"); // idx 1
 		shader->SetUniformLocation("texWeight"); // idx 2
 
-		shader->SetUniformMatrix4x4<const char*, float>("viewProjMat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
-		shader->SetUniformMatrix2x2<const char*, float>("texCoorMat", false, float4(1.0f, 0.0f, 0.0f, 1.0f)); // name-based for Font::*GL4
+		shader->SetUniformMatrix4x4<float>("viewProjMat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+		shader->SetUniformMatrix2x2<float>("texCoorMat", false, float4(1.0f, 0.0f, 0.0f, 1.0f)); // name-based for Font::*GL4
 		shader->SetUniform1i(0, 0);
 
 		shader->Disable();
@@ -90,7 +88,6 @@ void Gui::Draw()
 {
 	Clean();
 
-	// glAttribStatePtr->DisableAlphaTest();
 	glAttribStatePtr->EnableBlendMask();
 
 	shader->Enable();

@@ -36,7 +36,6 @@ public:
 	void GiveCommandReal(const Command& c, bool fromSynced = true) override;
 	void NonMoving();
 	void FinishCommand() override;
-	bool CanSetMaxSpeed() const override { return true; }
 	void StopSlowGuard();
 	void StartSlowGuard(float speed);
 	void ExecuteAttack(Command& c) override;
@@ -47,7 +46,6 @@ public:
 	virtual void ExecuteFight(Command& c);
 	virtual void ExecutePatrol(Command& c);
 	virtual void ExecuteMove(Command& c);
-	virtual void ExecuteSetWantedMaxSpeed(Command& c);
 	virtual void ExecuteLoadOnto(Command& c);
 
 	virtual void ExecuteUnloadUnit(Command& c);
@@ -56,7 +54,7 @@ public:
 
 	int GetCancelDistance() { return cancelDistance; }
 
-	virtual bool IsValidTarget(const CUnit* enemy) const;
+	virtual bool IsValidTarget(const CUnit* enemy, CWeapon* weapon) const;
 	virtual bool CanWeaponAutoTarget(const CWeapon* weapon) const override;
 
 	void SetTransportee(CUnit* unit);
@@ -93,13 +91,27 @@ protected:
 	bool slowGuard;
 	bool moveDir;
 
-	int cancelDistance;
+	int cancelDistance = 1024;
 
 	/// last frame certain types of area-commands were handled, helps avoid infinite loops
-	int lastCommandFrame;
-	int lastCloseInTry;
-	int lastBuggerOffTime;
-	int lastIdleCheck;
+	int lastCommandFrame = -1;
+	int lastCloseInTry = -1;
+	int lastBuggerOffTime = -BUGGER_OFF_TTL;
+	int lastIdleCheck = 0;
+	int numNonMovingCalls = 0;
+
+	static constexpr int MAX_CLOSE_IN_RETRY_TICKS = 30;
+	static constexpr int BUGGER_OFF_TTL = 200;
+
+	static constexpr float MAX_USERGOAL_TOLERANCE_DIST = 100.0f;
+	static constexpr float AIRTRANSPORT_DOCKING_RADIUS = 16.0f;
+	static constexpr float AIRTRANSPORT_DOCKING_ANGLE = 50.0f;
+
+	enum {
+		UNLOAD_LAND = 0,
+		UNLOAD_DROP = 1,
+		UNLOAD_LANDFLOOD = 2,
+	};
 
 	void PushOrUpdateReturnFight() {
 		CCommandAI::PushOrUpdateReturnFight(commandPos1, commandPos2);

@@ -23,7 +23,6 @@ struct S3DModel;
 
 class CSolidObject;
 class CUnit;
-class CVertexArray;
 
 struct Command;
 struct BuildInfo;
@@ -132,6 +131,7 @@ public:
 	// alpha.x := alpha-value
 	// alpha.y := alpha-pass (true or false)
 	void SetTeamColour(int team, const float2 alpha = float2(1.0f, 0.0f)) const;
+	void SetAlphaTest(const float4& params) const;
 
 
 	void SetupOpaqueDrawing(bool deferredPass);
@@ -143,10 +143,10 @@ public:
 	void ResetShowUnitBuildSquares(bool onMiniMap, bool testCanBuild);
 	bool ShowUnitBuildSquares(const BuildInfo& buildInfo, const std::vector<Command>& commands, bool testCanBuild);
 
-	void SetUnitDrawDist(float dist);
-	void SetUnitIconDist(float dist);
-
-	void DrawUnitMiniMapIcons() const;
+	#define sqr(x) ((x) * (x))
+	void SetUnitDrawDist(float dist) { unitDrawDistSqr = sqr(unitDrawDist = dist)         ; }
+	void SetUnitIconDist(float dist) {      iconLength = sqr(unitIconDist = dist) * 750.0f; }
+	#undef sqr
 
 public:
 	typedef void (*DrawModelFunc)(const CUnit*, bool);
@@ -225,7 +225,9 @@ private:
 
 public:
 	void DrawUnitIcons();
-	void DrawUnitMiniMapIcon(const CUnit* unit, CVertexArray* va) const;
+	void DrawUnitMiniMapIcon(const CUnit* unit, GL::RenderDataBufferTC* buffer) const;
+	void DrawUnitMiniMapIcons(GL::RenderDataBufferTC* buffer) const;
+
 private:
 	void UpdateUnitMiniMapIcon(const CUnit* unit, bool forced, bool killed);
 	void UpdateUnitIconState(CUnit* unit);

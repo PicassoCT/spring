@@ -40,11 +40,10 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/FastMath.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Log/ILog.h"
 #include "System/StringUtil.h"
 #include "System/Sound/ISoundChannels.h"
-#include "System/Sync/SyncTracer.h"
 
 #endif
 
@@ -551,16 +550,22 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 		} break;
 
 		default: {
+			if ((sfxType & SFX_GLOBAL) != 0) {
+				// emit defined explosion-generator (can only be custom, not standard)
+				// index is made valid by callee, an ID of -1 means CEG failed to load
+				explGenHandler.GenExplosion(sfxType - SFX_GLOBAL, absPos, absDir, unit->cegDamage, 1.0f, 0.0f, unit, nullptr);
+				return true;
+			}
 			if ((sfxType & SFX_CEG) != 0) {
 				// emit defined explosion-generator (can only be custom, not standard)
 				// index is made valid by callee, an ID of -1 means CEG failed to load
-				explGenHandler.GenExplosion(ud->GetModelExplosionGeneratorID(sfxType - SFX_CEG), absPos, absDir, unit->cegDamage, 1.0f, 0.0f, unit, nullptr);
+				explGenHandler.GenExplosion(ud->GetModelExpGenID(sfxType - SFX_CEG), absPos, absDir, unit->cegDamage, 1.0f, 0.0f, unit, nullptr);
 				return true;
 			}
 
 			if ((sfxType & SFX_FIRE_WEAPON) != 0) {
 				// make a weapon fire from the piece
-				const unsigned index = sfxType - SFX_FIRE_WEAPON;
+				const unsigned int index = sfxType - SFX_FIRE_WEAPON;
 
 				if (index >= unit->weapons.size()) {
 					ShowUnitScriptError("[US::EmitSFX::FIRE_WEAPON] invalid weapon index");
@@ -695,11 +700,6 @@ void CUnitScript::Explode(int piece, int flags)
 #ifndef _CONSOLE
 	const float3 relPos = GetPiecePos(piece);
 	const float3 absPos = unit->GetObjectSpacePos(relPos);
-
-#ifdef TRACE_SYNC
-	tracefile << "Cob explosion: ";
-	tracefile << absPos.x << " " << absPos.y << " " << absPos.z << " " << piece << " " << flags << "\n";
-#endif
 
 	// do an explosion at the location first
 	if (!(flags & PF_NoHeatCloud))
@@ -1401,7 +1401,7 @@ void CUnitScript::SetUnitVal(int val, int param)
 		} break;
 
 		case YARD_OPEN: {
-			if (unit->blockMap != nullptr) {
+			if (unit->GetBlockMap() != nullptr) {
 				// note: if this unit is a factory, engine-controlled
 				// OpenYard() and CloseYard() calls can interfere with
 				// the yardOpen state (they probably should be removed
@@ -1425,11 +1425,7 @@ void CUnitScript::SetUnitVal(int val, int param)
 		} break;
 
 		case ARMORED: {
-			if (param) {
-				unit->curArmorMultiple = unit->armoredMultiple;
-			} else {
-				unit->curArmorMultiple = 1;
-			}
+			unit->curArmorMultiple = mix(1.0f, unit->armoredMultiple, param != 0);
 			unit->armoredState = (param != 0);
 		} break;
 
@@ -1438,8 +1434,12 @@ void CUnitScript::SetUnitVal(int val, int param)
 		} break;
 
 		case MAX_SPEED: {
-			// interpret negative values as non-persistent changes
-			unit->commandAI->SetScriptMaxSpeed(std::max(param, -param) / float(COBSCALE), (param >= 0));
+			if (param >= 0) {
+				unit->moveType->SetMaxSpeed(param / float(COBSCALE));
+			} else {
+				// temporarily (until the next command is issued) change unit's speed
+				unit->moveType->SetWantedMaxSpeed(-param / float(COBSCALE));
+			}
 		} break;
 
 		case CLOAKED: {
@@ -1455,7 +1455,7 @@ void CUnitScript::SetUnitVal(int val, int param)
 		} break;
 
 		case HEADING: {
-			unit->SetHeading(param % COBSCALE, !unit->upright);
+			unit->SetHeading(param % COBSCALE, !unit->upright && unit->IsOnGround(), false);
 		} break;
 		case LOS_RADIUS: {
 			unit->ChangeLos(param, unit->realAirLosRadius);

@@ -52,7 +52,6 @@ void CCursorIcons::Draw()
 	glAttribStatePtr->PushBits(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glAttribStatePtr->EnableBlendMask();
 	glAttribStatePtr->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	glAttribStatePtr->AlphaFunc(GL_GREATER, 0.01f);
 	glAttribStatePtr->DisableDepthMask();
 
 	Sort();
@@ -75,8 +74,9 @@ void CCursorIcons::DrawCursors()
 	Shader::IProgramObject* shader = buffer->GetShader();
 
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+	shader->SetUniform("u_alpha_test_ctrl", 0.01f, 1.0f, 0.0f, 0.0f); // test > 0.01
 
 	const SColor iconColor = {1.0f, 1.0f, 1.0f, cmdColors.QueueIconAlpha()};
 
@@ -91,7 +91,7 @@ void CCursorIcons::DrawCursors()
 			if ((currentCursor = GetCursor(currentCommand = icon.cmd)) == nullptr)
 				continue;
 
-			buffer->Submit(GL_QUADS);
+			buffer->Submit(GL_TRIANGLES);
 			currentCursor->BindTexture();
 		}
 
@@ -103,13 +103,17 @@ void CCursorIcons::DrawCursors()
 		cursorMat.Translate(matParams.x, matParams.y, 0.0f);
 		cursorMat.Scale({matParams.z, matParams.w, 1.0f});
 
-		buffer->SafeAppend({cursorMat * ICON_VERTS[0], ICON_TXCDS[0].x, ICON_TXCDS[0].y, iconColor});
-		buffer->SafeAppend({cursorMat * ICON_VERTS[1], ICON_TXCDS[1].x, ICON_TXCDS[1].y, iconColor});
-		buffer->SafeAppend({cursorMat * ICON_VERTS[2], ICON_TXCDS[2].x, ICON_TXCDS[2].y, iconColor});
-		buffer->SafeAppend({cursorMat * ICON_VERTS[3], ICON_TXCDS[3].x, ICON_TXCDS[3].y, iconColor});
+		buffer->SafeAppend({cursorMat * ICON_VERTS[0], ICON_TXCDS[0].x, ICON_TXCDS[0].y, iconColor}); // tl
+		buffer->SafeAppend({cursorMat * ICON_VERTS[1], ICON_TXCDS[1].x, ICON_TXCDS[1].y, iconColor}); // bl
+		buffer->SafeAppend({cursorMat * ICON_VERTS[2], ICON_TXCDS[2].x, ICON_TXCDS[2].y, iconColor}); // br
+
+		buffer->SafeAppend({cursorMat * ICON_VERTS[2], ICON_TXCDS[2].x, ICON_TXCDS[2].y, iconColor}); // br
+		buffer->SafeAppend({cursorMat * ICON_VERTS[3], ICON_TXCDS[3].x, ICON_TXCDS[3].y, iconColor}); // tr
+		buffer->SafeAppend({cursorMat * ICON_VERTS[0], ICON_TXCDS[0].x, ICON_TXCDS[0].y, iconColor}); // tl
 	}
 
-	buffer->Submit(GL_QUADS);
+	buffer->Submit(GL_TRIANGLES);
+	shader->SetUniform("u_alpha_test_ctrl", 0.0f, 0.0f, 0.0f, 1.0f); // no test
 	shader->Disable();
 }
 
@@ -219,7 +223,6 @@ const CMouseCursor* CCursorIcons::GetCursor(int cmd) const
 		case CMD_MOVE_STATE:
 		case CMD_SETBASE:
 		case CMD_INTERNAL:
-		case CMD_SET_WANTED_MAX_SPEED:
 		case CMD_ONOFF:
 		case CMD_CLOAK:
 		case CMD_STOCKPILE:

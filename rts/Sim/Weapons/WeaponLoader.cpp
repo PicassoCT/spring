@@ -149,12 +149,6 @@ void CWeaponLoader::InitWeapon(CUnit* owner, CWeapon* weapon, const UnitDefWeapo
 	weapon->salvoDelay = int(weaponDef->salvodelay * GAME_SPEED);
 	weapon->projectilesPerShot = weaponDef->projectilespershot;
 
-	// TODO?
-	// weapon->dryHitSoundId = weaponDef->hitSound.getID(0);
-	// weapon->wetHitSoundId = weaponDef->hitSound.getID(1);
-	weapon->fireSoundId = weaponDef->fireSound.getID(0);
-	weapon->fireSoundVolume = weaponDef->fireSound.getVolume(0);
-
 	weapon->onlyForward = weaponDef->onlyForward;
 	weapon->maxForwardAngleDif = math::cos(weaponDef->maxAngle);
 	weapon->maxMainDirAngleDif = defWeapon->maxMainDirAngleDif;
@@ -174,6 +168,7 @@ void CWeaponLoader::InitWeapon(CUnit* owner, CWeapon* weapon, const UnitDefWeapo
 	weapon->avoidFlags |= (Collision::NOFRIENDLIES * (!weaponDef->avoidFriendly));
 	weapon->avoidFlags |= (Collision::NOFEATURES   * (!weaponDef->avoidFeature));
 	weapon->avoidFlags |= (Collision::NOGROUND     * (!weaponDef->avoidGround));
+	weapon->avoidFlags |= (Collision::NOCLOAKED    * (!weaponDef->avoidCloaked));
 
 	weapon->damages = DynDamageArray::IncRef(&weaponDef->damages);
 

@@ -13,6 +13,8 @@
 #include "System/float3.h"
 #include "System/UnorderedMap.hpp"
 
+#define MAX_UNITDEF_EXPGEN_IDS 8
+
 
 struct Command;
 struct WeaponDef;
@@ -68,11 +70,14 @@ public:
 
 	bool DontLand() const { return (dlHoverFactor >= 0.0f); }
 	bool RequireMoveDef() const { return (canmove && speed > 0.0f && !canfly); }
-	bool CanChangeFireState() const { return (canFireControl && (HasWeapons() || canKamikaze || IsFactoryUnit())); }
+	bool CanChangeFireState() const { return (canFireControl && (canKamikaze || HasWeapons() || IsFactoryUnit())); }
 
 	bool HasWeapons() const { return (HasWeapon(0)); }
 	bool HasWeapon(unsigned int idx) const { return (weapons[idx].def != nullptr); }
 	bool HasBomberWeapon(unsigned int idx) const;
+
+	bool CanAttack() const { return (canAttack && (canKamikaze || HasWeapons() || IsFactoryUnit())); }
+	bool CanDamage() const { return (canKamikaze || (canAttack && HasWeapons())); }
 
 	unsigned int NumWeapons() const {
 		unsigned int n = 0;
@@ -85,15 +90,21 @@ public:
 	}
 
 	const UnitDefWeapon& GetWeapon(unsigned int idx) const { return weapons[idx]; }
-	const std::vector<YardMapStatus>& GetYardMap() const { return yardmap; }
+	const YardMapStatus* GetYardMapPtr() const { return (yardmap.data()); }
 
-	void SetModelExplosionGeneratorID(unsigned int idx, unsigned int egID) { modelExplGenIDs[idx] = egID; }
-	void SetPieceExplosionGeneratorID(unsigned int idx, unsigned int egID) { pieceExplGenIDs[idx] = egID; }
-	void SetCrashExplosionGeneratorID(unsigned int idx, unsigned int egID) { crashExplGenIDs[idx] = egID; }
 
-	unsigned int GetModelExplosionGeneratorID(unsigned int idx) const { return (modelExplGenIDs[idx % modelExplGenIDs.size()]); }
-	unsigned int GetPieceExplosionGeneratorID(unsigned int idx) const { return (pieceExplGenIDs[idx % pieceExplGenIDs.size()]); }
-	unsigned int GetCrashExplosionGeneratorID(unsigned int idx) const { return (crashExplGenIDs[idx % crashExplGenIDs.size()]); }
+	void AddModelExpGenID(unsigned int egID) { modelExplGenIDs[1 + modelExplGenIDs[0]] = egID; modelExplGenIDs[0] += (egID != -1u); }
+	void AddPieceExpGenID(unsigned int egID) { pieceExplGenIDs[1 + pieceExplGenIDs[0]] = egID; pieceExplGenIDs[0] += (egID != -1u); }
+	void AddCrashExpGenID(unsigned int egID) { crashExplGenIDs[1 + crashExplGenIDs[0]] = egID; crashExplGenIDs[0] += (egID != -1u); }
+
+	// UnitScript::EmitSFX can pass in any index, unlike PieceProjectile and AAirMoveType code
+	unsigned int GetModelExpGenID(unsigned int idx) const { return modelExplGenIDs[1 + (idx % MAX_UNITDEF_EXPGEN_IDS)]; }
+	unsigned int GetPieceExpGenID(unsigned int idx) const { return pieceExplGenIDs[1 + (idx                         )]; }
+	unsigned int GetCrashExpGenID(unsigned int idx) const { return crashExplGenIDs[1 + (idx                         )]; }
+
+	unsigned int GetModelExpGenCount() const { return modelExplGenIDs[0]; }
+	unsigned int GetPieceExpGenCount() const { return pieceExplGenIDs[0]; }
+	unsigned int GetCrashExpGenCount() const { return crashExplGenIDs[0]; }
 
 public:
 	int cobID;              ///< associated with the COB \<GET COB_ID unitID\> call
@@ -207,14 +218,15 @@ public:
 	///< buildingMask used to disallow construction on certain map squares
 	std::uint16_t buildingMask;
 
-	std::array<std::string, 8> modelCEGTags;
-	std::array<std::string, 8> pieceCEGTags;
-	std::array<std::string, 8> crashCEGTags;
+	std::array<char[64], MAX_UNITDEF_EXPGEN_IDS> modelCEGTags;
+	std::array<char[64], MAX_UNITDEF_EXPGEN_IDS> pieceCEGTags;
+	std::array<char[64], MAX_UNITDEF_EXPGEN_IDS> crashCEGTags;
 
-	// TODO: privatize
-	std::array<unsigned int, 8> modelExplGenIDs;
-	std::array<unsigned int, 8> pieceExplGenIDs;
-	std::array<unsigned int, 8> crashExplGenIDs;
+	// *ExplGenIDs[0] stores the number of valid CEG's (TODO: privatize)
+	// valid CEG id's are all in front s.t. they can be randomly sampled
+	std::array<unsigned int, 1 + MAX_UNITDEF_EXPGEN_IDS> modelExplGenIDs;
+	std::array<unsigned int, 1 + MAX_UNITDEF_EXPGEN_IDS> pieceExplGenIDs;
+	std::array<unsigned int, 1 + MAX_UNITDEF_EXPGEN_IDS> crashExplGenIDs;
 
 	spring::unordered_map<int, std::string> buildOptions;
 
@@ -298,7 +310,6 @@ public:
 	int transportCapacity;
 	int transportSize;
 	int minTransportSize;
-	bool isAirBase;
 	bool isFirePlatform;							///< should the carried units still be able to shoot?
 	float transportMass;
 	float minTransportMass;
@@ -364,7 +375,7 @@ public:
 
 private:
 	void ParseWeaponsTable(const LuaTable& weaponsTable);
-	void CreateYardMap(std::string yardMapStr);
+	void CreateYardMap(std::string&& yardMapStr);
 
 	float realMetalCost;
 	float realEnergyCost;

@@ -26,6 +26,11 @@ public:
 		/// this is what happens to aircraft with dontLand=1 in fbi
 		AIRCRAFT_HOVERING
 	};
+	enum CollisionState {
+		COLLISION_NOUNIT = 0,
+		COLLISION_DIRECT = 1, // "directly on path"
+		COLLISION_NEARBY = 2, // "generally nearby"
+	};
 
 	AAirMoveType(CUnit* unit);
 	virtual ~AAirMoveType() {}
@@ -37,8 +42,11 @@ public:
 	virtual void SetState(AircraftState state) {}
 	virtual AircraftState GetLandingState() const { return AIRCRAFT_LANDING; }
 
-	void SetWantedAltitude(float altitude);
-	void SetDefaultAltitude(float altitude);
+	void SetWantedAltitude(float altitude) { wantedHeight = mix(orgWantedHeight, altitude, altitude != 0.0f); }
+	void SetDefaultAltitude(float altitude) {
+		wantedHeight = altitude;
+		orgWantedHeight = altitude;
+	}
 
 	bool HaveLandingPos() const { return (reservedLandingPos.x != -1.0f); }
 
@@ -57,6 +65,7 @@ protected:
 
 public:
 	AircraftState aircraftState = AIRCRAFT_LANDED;
+	CollisionState collisionState = COLLISION_NOUNIT;
 
 	/// goalpos to resume flying to after landing
 	float3 oldGoalPos;
@@ -73,16 +82,16 @@ public:
 
 	/// mods can use this to disable plane collisions
 	bool collide = true;
+	bool autoLand = true;
+	bool dontLand = false;
 	/// controls use of smoothGround for determining altitude
 	bool useSmoothMesh = false;
-	bool autoLand = true;
+	bool canSubmerge = false;
+	bool floatOnWater = false;
 
 protected:
 	/// unit found to be dangerously close to our path
-	CUnit* lastColWarning = nullptr;
-
-	/// 1=generally forward of us, 2=directly in path
-	int lastColWarningType = 0;
+	CUnit* lastCollidee = nullptr;
 
 	unsigned int crashExpGenID = -1u;
 };

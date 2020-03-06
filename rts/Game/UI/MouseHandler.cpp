@@ -22,6 +22,7 @@
 #include "Lua/LuaInputReceiver.h"
 #include "Map/Ground.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GL/WideLineAdapter.hpp"
 #include "Rendering/Fonts/glFont.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/RenderDataBuffer.hpp"
@@ -33,7 +34,7 @@
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 #include "System/FastMath.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/SafeUtil.h"
 #include "System/StringUtil.h"
 #include "System/Input/KeyInput.h"
@@ -50,17 +51,19 @@
 CONFIG(bool, HardwareCursor).defaultValue(false).description("Sets hardware mouse cursor rendering. If you have a low framerate, your mouse cursor will seem \"laggy\". Setting hardware cursor will render the mouse cursor separately from spring and the mouse will behave normally. Note, not all GPU drivers support it in fullscreen mode!");
 CONFIG(bool, InvertMouse).defaultValue(false);
 CONFIG(bool, MouseRelativeModeWarp).defaultValue(true);
-CONFIG(float, DoubleClickTime).defaultValue(200.0f).description("Double click time in milliseconds.");
-
-CONFIG(float, ScrollWheelSpeed)
-	.defaultValue(25.0f)
-	.minimumValue(-255.f)
-	.maximumValue(255.f);
 
 CONFIG(float, CrossSize).defaultValue(12.0f);
 CONFIG(float, CrossAlpha).defaultValue(0.5f);
 CONFIG(float, CrossMoveScale).defaultValue(1.0f);
+
+CONFIG(float, DoubleClickTime).defaultValue(200.0f).description("Double click time in milliseconds.");
+CONFIG(float, ScrollWheelSpeed).defaultValue(25.0f).minimumValue(-255.f).maximumValue(255.f);
+
 CONFIG(float, MouseDragScrollThreshold).defaultValue(0.3f);
+CONFIG(int, MouseDragSelectionThreshold).defaultValue(4).description("Distance in pixels which the mouse must be dragged to trigger a selection box.");
+CONFIG(int, MouseDragCircleCommandThreshold).defaultValue(4).description("Distance in pixels which the mouse must be dragged to trigger a circular area command.");
+CONFIG(int, MouseDragBoxCommandThreshold).defaultValue(16).description("Distance in pixels which the mouse must be dragged to trigger a rectangular area command.");
+CONFIG(int, MouseDragFrontCommandThreshold).defaultValue(30).description("Distance in pixels which the mouse must be dragged to trigger a formation front command.");
 
 //////////////////////////////////////////////////////////////////////
 // Construction/Destruction
@@ -73,27 +76,41 @@ static CInputReceiver*& activeReceiver = CInputReceiver::GetActiveReceiverRef();
 
 CMouseHandler::CMouseHandler()
 {
-	const int2 mousepos = mouseInput->GetPos();
+	const int2 screenCenter = globalRendering->GetScreenCenter();
 
-	lastx = mousepos.x;
-	lasty = mousepos.y;
+	// initially center the cursor
+	mouseInput->SetPos(screenCenter);
+	mouseInput->WarpPos(screenCenter);
+
+	dir = GetCursorCameraDir(lastx = screenCenter.x, lasty = screenCenter.y);
+
 
 #ifndef __APPLE__
 	hardwareCursor = configHandler->GetBool("HardwareCursor");
 #endif
-
 	invertMouse = configHandler->GetBool("InvertMouse");
-	doubleClickTime = configHandler->GetFloat("DoubleClickTime") / 1000.0f;
-
-	scrollWheelSpeed = configHandler->GetFloat("ScrollWheelSpeed");
 
 	crossSize      = configHandler->GetFloat("CrossSize");
 	crossAlpha     = configHandler->GetFloat("CrossAlpha");
 	crossMoveScale = configHandler->GetFloat("CrossMoveScale") * 0.005f;
 
-	dragScrollThreshold = configHandler->GetFloat("MouseDragScrollThreshold");
+	doubleClickTime = configHandler->GetFloat("DoubleClickTime") / 1000.0f;
+	scrollWheelSpeed = configHandler->GetFloat("ScrollWheelSpeed");
 
-	configHandler->NotifyOnChange(this, {"MouseDragScrollThreshold", "ScrollWheelSpeed"});
+	dragScrollThreshold = configHandler->GetFloat("MouseDragScrollThreshold");
+	dragSelectionThreshold = configHandler->GetInt("MouseDragSelectionThreshold");
+	dragBoxCommandThreshold = configHandler->GetInt("MouseDragBoxCommandThreshold");
+	dragCircleCommandThreshold = configHandler->GetInt("MouseDragCircleCommandThreshold");
+	dragFrontCommandThreshold = configHandler->GetInt("MouseDragFrontCommandThreshold");
+
+	configHandler->NotifyOnChange(this, {
+		"ScrollWheelSpeed",
+		"MouseDragScrollThreshold",
+		"MouseDragSelectionThreshold",
+		"MouseDragBoxCommandThreshold",
+		"MouseDragCircleCommandThreshold",
+		"MouseDragFrontCommandThreshold"
+	});
 }
 
 CMouseHandler::~CMouseHandler()
@@ -137,6 +154,8 @@ void CMouseHandler::ReloadCursors()
 	cursorCommandMap.reserve(32);
 	cursorFileMap.clear();
 	cursorFileMap.reserve(32);
+	activeCursorName.clear();
+	queuedCursorName.clear();
 
 	cursorCommandMap["none"] = loadedCursors.size() - 1;
 	cursorFileMap["null"] = loadedCursors.size() - 1;
@@ -274,7 +293,7 @@ void CMouseHandler::MousePress(int x, int y, int button)
 	bp.dir      = (dir = GetCursorCameraDir(x, y));
 	bp.movement = 0;
 
-	if (activeReceiver && activeReceiver->MousePress(x, y, button))
+	if (activeReceiver != nullptr && activeReceiver->MousePress(x, y, button))
 		return;
 
 	if (inMapDrawer != nullptr && inMapDrawer->IsDrawMode()) {
@@ -311,16 +330,16 @@ void CMouseHandler::MousePress(int x, int y, int button)
 				if (activeReceiver == nullptr)
 					activeReceiver = recv;
 
-				return;
+				break;
 			}
 		}
-	} else {
-		if (guihandler != nullptr && guihandler->MousePress(x, y, button)) {
-			if (activeReceiver == nullptr)
-				activeReceiver = guihandler; // for default (rmb) commands
 
-			return;
-		}
+		return;
+	}
+
+	if (guihandler != nullptr && guihandler->MousePress(x, y, button)) {
+		if (activeReceiver == nullptr)
+			activeReceiver = guihandler; // for default (rmb) commands
 	}
 }
 
@@ -417,7 +436,7 @@ void CMouseHandler::MouseRelease(int x, int y, int button)
 		if (!KeyInput::GetKeyModState(KMOD_SHIFT) && !KeyInput::GetKeyModState(KMOD_CTRL))
 			selectedUnitsHandler.ClearSelected();
 
-		if (bp.movement > 4) {
+		if (bp.movement > dragSelectionThreshold) {
 			// select box
 			float2 topright, btmleft;
 			GetSelectionBoxCoeff(bp.camPos, bp.dir, camera->GetPos(), dir, topright, btmleft);
@@ -483,7 +502,7 @@ void CMouseHandler::DrawSelectionBox()
 		return;
 	if (bp.chorded)
 		return;
-	if (bp.movement <= 4)
+	if (bp.movement <= dragSelectionThreshold)
 		return;
 
 	if (inMapDrawer != nullptr && inMapDrawer->IsDrawMode())
@@ -508,6 +527,7 @@ void CMouseHandler::DrawSelectionBox()
 
 	GL::RenderDataBufferC* buffer = GL::GetRenderBufferC();
 	Shader::IProgramObject* shader = buffer->GetShader();
+	GL::WideLineAdapterC* wla = GL::GetWideLineAdapterC();
 
 	glAttribStatePtr->PushEnableBit();
 	glAttribStatePtr->DisableDepthTest();
@@ -515,16 +535,13 @@ void CMouseHandler::DrawSelectionBox()
 	glAttribStatePtr->BlendFunc((GLenum)cmdColors.MouseBoxBlendSrc(),
 	            (GLenum)cmdColors.MouseBoxBlendDst());
 
-	glAttribStatePtr->LineWidth(cmdColors.MouseBoxLineWidth());
-
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
-	buffer->SafeAppend(&selBoxVerts[0], sizeof(selBoxVerts) / sizeof(selBoxVerts[0]));
-	buffer->Submit(GL_LINE_LOOP);
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, camera->GetViewMatrix());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, camera->GetProjectionMatrix());
+	wla->Setup(buffer, globalRendering->viewSizeX, globalRendering->viewSizeY, cmdColors.MouseBoxLineWidth(), camera->GetViewProjectionMatrix());
+	wla->SafeAppend(&selBoxVerts[0], sizeof(selBoxVerts) / sizeof(selBoxVerts[0]));
+	wla->Submit(GL_LINE_LOOP);
 	shader->Disable();
-
-	glAttribStatePtr->LineWidth(1.0f);
 
 	glAttribStatePtr->PopBits();
 }
@@ -608,7 +625,7 @@ std::string CMouseHandler::GetCurrentTooltip() const
 
 void CMouseHandler::Update()
 {
-	SetCursor(newCursor);
+	SetCursor(queuedCursorName);
 
 	if (!hideCursor)
 		return;
@@ -713,7 +730,7 @@ void CMouseHandler::ToggleHwCursor(bool enable)
 	}
 
 	// force hardware cursor rebinding, otherwise we get a standard b&w cursor
-	cursorText = "none";
+	activeCursorName = "none";
 }
 
 
@@ -721,18 +738,17 @@ void CMouseHandler::ToggleHwCursor(bool enable)
 
 void CMouseHandler::ChangeCursor(const std::string& cmdName, const float scale)
 {
-	newCursor = cmdName;
+	queuedCursorName = cmdName;
 	cursorScale = scale;
 }
 
 
 void CMouseHandler::SetCursor(const std::string& cmdName, const bool forceRebind)
 {
-	if ((cursorText == cmdName) && !forceRebind)
+	if ((activeCursorName == cmdName) && !forceRebind)
 		return;
 
-	cursorText = cmdName;
-	const auto it = cursorCommandMap.find(cmdName);
+	const auto it = cursorCommandMap.find(activeCursorName = cmdName);
 
 	if (it != cursorCommandMap.end()) {
 		activeCursorIdx = it->second;
@@ -743,13 +759,11 @@ void CMouseHandler::SetCursor(const std::string& cmdName, const bool forceRebind
 	if (!hardwareCursor || hideCursor)
 		return;
 
-	if (loadedCursors[activeCursorIdx].IsHWValid()) {
-		hwHideCursor = false;
-		loadedCursors[activeCursorIdx].BindHwCursor(); // calls SDL_ShowCursor(SDL_ENABLE);
-	} else {
-		hwHideCursor = true;
+	if ((hwHideCursor = !loadedCursors[activeCursorIdx].IsHWValid())) {
 		SDL_ShowCursor(SDL_DISABLE);
 		mouseInput->SetWMMouseCursor(nullptr);
+	} else {
+		loadedCursors[activeCursorIdx].BindHwCursor(); // calls SDL_ShowCursor(SDL_ENABLE);
 	}
 }
 
@@ -757,8 +771,8 @@ void CMouseHandler::SetCursor(const std::string& cmdName, const bool forceRebind
 void CMouseHandler::UpdateCursors()
 {
 	// we update all cursors (for the command queue icons)
-	for (auto it = cursorFileMap.begin(); it != cursorFileMap.end(); ++it) {
-		loadedCursors[it->second].Update();
+	for (const auto& element: cursorFileMap) {
+		loadedCursors[element.second].Update();
 	}
 }
 
@@ -860,8 +874,8 @@ void CMouseHandler::DrawCursor()
 			Shader::IProgramObject* shader = buffer->GetShader();
 
 			shader->Enable();
-			shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, cursorMat);
-			shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+			shader->SetUniformMatrix4x4<float>("u_movi_mat", false, cursorMat);
+			shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
 
 			if (gu->fpsMode) {
 				DrawFPSCursor(buffer);
@@ -911,40 +925,41 @@ bool CMouseHandler::AssignMouseCursor(
 	CMouseCursor::HotSpot hotSpot,
 	bool overwrite
 ) {
-	const auto cmdIt = cursorCommandMap.find(cmdName);
+	const auto  cmdIt = cursorCommandMap.find(cmdName);
 	const auto fileIt = cursorFileMap.find(fileName);
 
-	const bool haveCmd = (cmdIt != cursorCommandMap.end());
+	const bool haveCmd  = ( cmdIt != cursorCommandMap.end());
 	const bool haveFile = (fileIt != cursorFileMap.end());
 
+	// already assigned a cursor for this command
 	if (haveCmd && !overwrite)
-		return false; // already assigned
+		return false;
 
+	// cursor is already loaded but not assigned, reuse it
 	if (haveFile) {
-		// cursor is already loaded, reuse it
 		cursorCommandMap[cmdName] = fileIt->second;
 		return true;
 	}
 
-	CMouseCursor newCursor = std::move(CMouseCursor::New(fileName, hotSpot));
-
-	if (!newCursor.IsValid())
-		return false;
-
-	const int commandCursorIdx = haveCmd? cmdIt->second: -1;
+	const size_t numLoadedCursors = loadedCursors.size();
+	const size_t commandCursorIdx = haveCmd? cmdIt->second: numLoadedCursors + 1;
 
 	// assign the new cursor and remap indices
-	loadedCursors.emplace_back();
-	loadedCursors.back() = std::move(newCursor);
+	loadedCursors.emplace_back(fileName, hotSpot);
 
-	cursorFileMap[fileName] = loadedCursors.size() - 1;
-	cursorCommandMap[cmdName] = loadedCursors.size() - 1;
+	// a loaded cursor can be invalid, but if so the command will not be mapped to it
+	// allows Lua code to replace the cursor by a valid one later and do reassignment
+	// cursorCommandMap[cmdName] = (loadedCursors[numLoadedCursors].IsValid())? numLoadedCursors: commandCursorIdx;
+	cursorFileMap[fileName] = numLoadedCursors;
+
+	if (loadedCursors[numLoadedCursors].IsValid())
+		cursorCommandMap[cmdName] = numLoadedCursors;
 
 	// switch to the null-cursor if our active one is being (re)assigned
 	if (activeCursorIdx == commandCursorIdx)
 		SetCursor("none", true);
 
-	return true;
+	return (loadedCursors[numLoadedCursors].IsValid());
 }
 
 bool CMouseHandler::ReplaceMouseCursor(
@@ -957,18 +972,13 @@ bool CMouseHandler::ReplaceMouseCursor(
 	if (fileIt == cursorFileMap.end())
 		return false;
 
-	CMouseCursor newCursor = std::move(CMouseCursor::New(newName, hotSpot));
-
-	if (!newCursor.IsValid())
-		return false; // leave the old one
-
-	loadedCursors[fileIt->second] = std::move(newCursor);
+	loadedCursors[fileIt->second] = CMouseCursor(newName, hotSpot);
 
 	// update current cursor if necessary
 	if (activeCursorIdx == fileIt->second)
-		SetCursor(cursorText, true);
+		SetCursor(activeCursorName, true);
 
-	return true;
+	return (loadedCursors[activeCursorIdx].IsValid());
 }
 
 
@@ -976,7 +986,11 @@ bool CMouseHandler::ReplaceMouseCursor(
 
 void CMouseHandler::ConfigNotify(const std::string& key, const std::string& value)
 {
-	dragScrollThreshold = configHandler->GetFloat("MouseDragScrollThreshold");
 	scrollWheelSpeed = configHandler->GetFloat("ScrollWheelSpeed");
+	dragScrollThreshold = configHandler->GetFloat("MouseDragScrollThreshold");
+	dragSelectionThreshold = configHandler->GetInt("MouseDragSelectionThreshold");
+	dragBoxCommandThreshold = configHandler->GetInt("MouseDragBoxCommandThreshold");
+	dragCircleCommandThreshold = configHandler->GetInt("MouseDragCircleCommandThreshold");
+	dragFrontCommandThreshold = configHandler->GetInt("MouseDragFrontCommandThreshold");
 }
 

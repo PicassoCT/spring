@@ -18,17 +18,16 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/GL/RenderDataBuffer.hpp"
-#include "Rendering/GL/VertexArray.h"
 #include "Rendering/Map/InfoTexture/IInfoTextureHandler.h"
 #include "Rendering/Shaders/ShaderHandler.h"
 #include "Rendering/Shaders/Shader.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "Rendering/Textures/TextureAtlas.h"
-// #include "Sim/Misc/Wind.h"
+#include "Sim/Misc/Wind.h"
 #include "System/bitops.h"
 #include "System/FileSystem/FileHandler.h"
 #include "System/FastMath.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/EventHandler.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/TimeProfiler.h"
@@ -164,7 +163,7 @@ CBumpWater::CBumpWater()
 		glTexImage2D(GL_PROXY_TEXTURE_2D, 0, GL_RGBA16F, 4096, 4096, 0, GL_RGBA, GL_FLOAT, nullptr);
 		glGetTexLevelParameteriv(GL_PROXY_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &maxw);
 		glGetTexLevelParameteriv(GL_PROXY_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &maxh);
-		if (mapDims.mapx>maxw || mapDims.mapy>maxh) {
+		if (mapDims.mapx > maxw || mapDims.mapy > maxh) {
 			shoreWaves = false;
 			LOG_L(L_WARNING, "Can not display shorewaves (map too large)!");
 		}
@@ -211,8 +210,8 @@ CBumpWater::CBumpWater()
 			blurShader->SetUniform1i(0, 0);
 			blurShader->SetUniform1i(1, 1);
 			blurShader->SetUniform2i(2, 0, 0);
-			blurShader->SetUniformMatrix4x4<const char*, float>("uViewMat", false, CMatrix44f::Identity());
-			blurShader->SetUniformMatrix4x4<const char*, float>("uProjMat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+			blurShader->SetUniformMatrix4x4<float>("uViewMat", false, CMatrix44f::Identity());
+			blurShader->SetUniformMatrix4x4<float>("uProjMat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
 			blurShader->Disable();
 			blurShader->Validate();
 
@@ -276,10 +275,7 @@ CBumpWater::CBumpWater()
 		glBindTexture(screenCopyTarget, depthTexture);
 		glTexParameteri(screenCopyTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(screenCopyTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-		const GLuint depthFormat = (!globalRendering->atiHacks)? GL_DEPTH_COMPONENT24: GL_DEPTH_COMPONENT32;
-
-		glTexImage2D(screenCopyTarget, 0, depthFormat, screenTextureX, screenTextureY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+		glTexImage2D(screenCopyTarget, 0, GL_DEPTH_COMPONENT32, screenTextureX, screenTextureY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
 	}
 
 	if (dynWaves) {
@@ -471,8 +467,10 @@ CBumpWater::CBumpWater()
 	GenOcclusionQuery(configHandler->GetBool("BumpWaterOcclusionQuery"));
 
 	#if 0
-	windDir = wind.GetCurrentDirection();
-	windVec = windDir * (windStrength = (smoothstep(0.0f, 12.0f, wind.GetCurrentStrength()) * 0.5f + 4.0f));
+	windDir = envResHandler.GetCurrentWindDir();
+	windVec = windDir * (windStrength = (smoothstep(0.0f, 12.0f, envResHandler.GetCurrentWindStrength()) * 0.5f + 4.0f));
+	#else
+	windVec = guRNG.NextVector(0.0f) * mix(envResHandler.GetMinWindStrength(), envResHandler.GetMaxWindStrength(), guRNG.NextFloat());
 	#endif
 }
 
@@ -490,9 +488,8 @@ CBumpWater::~CBumpWater()
 
 	glDeleteTextures(1, &foamTexture);
 	glDeleteTextures(1, &normalTexture);
-	for (size_t i = 0; i < caustTextures.size(); ++i) {
-		glDeleteTextures(1, &caustTextures[i]);
-	}
+	// never empty
+	glDeleteTextures(caustTextures.size(), &caustTextures[0]);
 
 	waterPlaneBuffer.Kill();
 
@@ -586,8 +583,8 @@ void CBumpWater::GenWaterPlaneBuffer(bool radial)
 		Shader::IProgramObject* shaderProg = waterPlaneBuffer.CreateShader((sizeof(shaderObjs) / sizeof(shaderObjs[0])), 0, &shaderObjs[0], nullptr);
 
 		shaderProg->Enable();
-		shaderProg->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shaderProg->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::Identity());
+		shaderProg->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shaderProg->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::Identity());
 		shaderProg->Disable();
 	}
 }
@@ -674,8 +671,6 @@ void CBumpWater::Update()
 
 	UpdateWind();
 
-	SCOPED_TIMER("Update::WorldDrawer::BumpWater");
-
 	if (dynWaves)
 		UpdateDynWaves();
 
@@ -692,10 +687,10 @@ void CBumpWater::UpdateWind()
 {
 	#if 0
 	windStrength *= 0.9999f;
-	windStrength += (smoothstep(0.0f, 12.0f, wind.GetCurrentStrength()) * 0.5f + 4.0f) * 0.0001f;
+	windStrength += (smoothstep(0.0f, 12.0f, envResHandler.GetCurrentWindStrength()) * 0.5f + 4.0f) * 0.0001f;
 
 	windDir *= 0.995f;
-	windDir -= (wind.GetCurrentDirection() * 0.005f);
+	windDir -= (envResHandler.GetCurrentWindDir() * 0.005f);
 	windVec  = windDir * windStrength;
 	#endif
 }
@@ -707,9 +702,8 @@ void CBumpWater::UpdateWater(CGame* game)
 
 
 	if (occlusionQuery != 0 && !wasVisibleLastFrame) {
-		SCOPED_TIMER("Draw::World::Water::BumpWater");
-
 		glGetQueryObjectuiv(occlusionQuery, GL_QUERY_RESULT_AVAILABLE, &occlusionQueryResult);
+
 		if (occlusionQueryResult) {
 			glGetQueryObjectuiv(occlusionQuery, GL_QUERY_RESULT, &occlusionQueryResult);
 
@@ -778,7 +772,7 @@ void CBumpWater::UploadCoastline(const bool forceFull)
 
 		if ((currentPixels + cuRect1.GetArea() <= 512 * 512) || forceFull) {
 			currentPixels += cuRect1.GetArea();
-			coastmapAtlasRects.push_back(cuRect1);
+			coastmapAtlasRects.emplace_back(cuRect1);
 			heightmapUpdates.pop_front();
 			continue;
 		}
@@ -878,14 +872,17 @@ void CBumpWater::UpdateCoastmap(const bool initialize)
 	{
 		// NB: 4-channel texcoors
 		for (const CoastAtlasRect& r: coastmapAtlasRects) {
-			rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}});
-			rdbt->SafeAppend({{r.x1, r.y2, 0.0f}, {r.tx1, r.ty2, 0.0f, 1.0f}});
-			rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}});
-			rdbt->SafeAppend({{r.x2, r.y1, 0.0f}, {r.tx2, r.ty1, 1.0f, 0.0f}});
+			rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}}); // tl
+			rdbt->SafeAppend({{r.x1, r.y2, 0.0f}, {r.tx1, r.ty2, 0.0f, 1.0f}}); // bl
+			rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}}); // br
+
+			rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}}); // br
+			rdbt->SafeAppend({{r.x2, r.y1, 0.0f}, {r.tx2, r.ty1, 1.0f, 0.0f}}); // tr
+			rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}}); // tl
 			numCoastRects += r.isCoastline;
 		}
 
-		rdbt->Submit(GL_QUADS);
+		rdbt->Submit(GL_TRIANGLES);
 	}
 
 	if (numCoastRects > 0 && atlasSizeX > 0 && atlasSizeY > 0) {
@@ -901,13 +898,16 @@ void CBumpWater::UpdateCoastmap(const bool initialize)
 						continue;
 
 					// NB: pass positions as texcoords for scissoring
-					rdbt->SafeAppend({{r.tx1, r.ty1, 0.0f}, {r.x1, r.y1, 0.0f, 0.0f}});
-					rdbt->SafeAppend({{r.tx1, r.ty2, 0.0f}, {r.x1, r.y2, 0.0f, 1.0f}});
-					rdbt->SafeAppend({{r.tx2, r.ty2, 0.0f}, {r.x2, r.y2, 1.0f, 1.0f}});
-					rdbt->SafeAppend({{r.tx2, r.ty1, 0.0f}, {r.x2, r.y1, 1.0f, 0.0f}});
+					rdbt->SafeAppend({{r.tx1, r.ty1, 0.0f}, {r.x1, r.y1, 0.0f, 0.0f}}); // tl
+					rdbt->SafeAppend({{r.tx1, r.ty2, 0.0f}, {r.x1, r.y2, 0.0f, 1.0f}}); // bl
+					rdbt->SafeAppend({{r.tx2, r.ty2, 0.0f}, {r.x2, r.y2, 1.0f, 1.0f}}); // br
+
+					rdbt->SafeAppend({{r.tx2, r.ty2, 0.0f}, {r.x2, r.y2, 1.0f, 1.0f}}); // br
+					rdbt->SafeAppend({{r.tx2, r.ty1, 0.0f}, {r.x2, r.y1, 1.0f, 0.0f}}); // tr
+					rdbt->SafeAppend({{r.tx1, r.ty1, 0.0f}, {r.x1, r.y1, 0.0f, 0.0f}}); // tl
 				}
 
-				rdbt->Submit(GL_QUADS);
+				rdbt->Submit(GL_TRIANGLES);
 			}
 
 
@@ -920,13 +920,16 @@ void CBumpWater::UpdateCoastmap(const bool initialize)
 					if (!r.isCoastline)
 						continue;
 
-					rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}});
-					rdbt->SafeAppend({{r.x1, r.y2, 0.0f}, {r.tx1, r.ty2, 0.0f, 1.0f}});
-					rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}});
-					rdbt->SafeAppend({{r.x2, r.y1, 0.0f}, {r.tx2, r.ty1, 1.0f, 0.0f}});
+					rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}}); // tl
+					rdbt->SafeAppend({{r.x1, r.y2, 0.0f}, {r.tx1, r.ty2, 0.0f, 1.0f}}); // bl
+					rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}}); // br
+
+					rdbt->SafeAppend({{r.x2, r.y2, 0.0f}, {r.tx2, r.ty2, 1.0f, 1.0f}}); // br
+					rdbt->SafeAppend({{r.x2, r.y1, 0.0f}, {r.tx2, r.ty1, 1.0f, 0.0f}}); // tr
+					rdbt->SafeAppend({{r.x1, r.y1, 0.0f}, {r.tx1, r.ty1, 0.0f, 0.0f}}); // tl
 				}
 
-				rdbt->Submit(GL_QUADS);
+				rdbt->Submit(GL_TRIANGLES);
 			}
 		}
 	}
@@ -998,8 +1001,8 @@ void CBumpWater::UpdateDynWaves(const bool initialize)
 	Shader::IProgramObject* shader = buffer->GetShader();
 
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
 
 	glAttribStatePtr->ViewPort(0, 0, normalTextureX, normalTextureY);
 
@@ -1009,14 +1012,17 @@ void CBumpWater::UpdateDynWaves(const bool initialize)
 				const uint8_t tx = offset % tiles;
 				const uint8_t ty = (offset - tx) / tiles;
 
-				buffer->SafeAppend({(x    ) * tilesize, (y    ) * tilesize,  (tx    ) * tilesize, (ty    ) * tilesize});
-				buffer->SafeAppend({(x    ) * tilesize, (y + 1) * tilesize,  (tx    ) * tilesize, (ty + 1) * tilesize});
-				buffer->SafeAppend({(x + 1) * tilesize, (y + 1) * tilesize,  (tx + 1) * tilesize, (ty + 1) * tilesize});
-				buffer->SafeAppend({(x + 1) * tilesize, (y    ) * tilesize,  (tx + 1) * tilesize, (ty    ) * tilesize});
+				buffer->SafeAppend({(x    ) * tilesize, (y    ) * tilesize,  (tx    ) * tilesize, (ty    ) * tilesize}); // tl
+				buffer->SafeAppend({(x    ) * tilesize, (y + 1) * tilesize,  (tx    ) * tilesize, (ty + 1) * tilesize}); // bl
+				buffer->SafeAppend({(x + 1) * tilesize, (y + 1) * tilesize,  (tx + 1) * tilesize, (ty + 1) * tilesize}); // br
+
+				buffer->SafeAppend({(x + 1) * tilesize, (y + 1) * tilesize,  (tx + 1) * tilesize, (ty + 1) * tilesize}); // br
+				buffer->SafeAppend({(x + 1) * tilesize, (y    ) * tilesize,  (tx + 1) * tilesize, (ty    ) * tilesize}); // tr
+				buffer->SafeAppend({(x    ) * tilesize, (y    ) * tilesize,  (tx    ) * tilesize, (ty    ) * tilesize}); // tl
 			}
 		}
 
-	buffer->Submit(GL_QUADS);
+	buffer->Submit(GL_TRIANGLES);
 	shader->Disable();
 
 	// redundant?
@@ -1083,8 +1089,6 @@ void CBumpWater::Draw()
 		glCopyTexSubImage2D(screenCopyTarget, 0, 0, 0, globalRendering->viewPosX, 0, globalRendering->viewSizeX, globalRendering->viewSizeY);
 	}
 
-	glAttribStatePtr->DisableAlphaTest();
-
 	if (refraction < 2)
 		glAttribStatePtr->DisableDepthMask();
 
@@ -1125,7 +1129,10 @@ void CBumpWater::Draw()
 		SetUniforms();
 
 	glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_LINE * wireFrameMode + GL_FILL * (1 - wireFrameMode));
+	glAttribStatePtr->PolygonOffsetFill(GL_TRUE);
+	glAttribStatePtr->PolygonOffset(0.0f, 2.0f);
 	waterPlaneBuffer.Submit(mix(GL_TRIANGLES, GL_TRIANGLE_STRIP, endlessOcean), 0, waterPlaneBuffer.GetNumElems<VA_TYPE_0>());
+	glAttribStatePtr->PolygonOffsetFill(GL_FALSE);
 	glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 	waterShader->Disable();
@@ -1226,8 +1233,8 @@ void CBumpWater::OcclusionQuery()
 	Shader::IProgramObject* waterPlaneShader = &waterPlaneBuffer.GetShader();
 
 	waterPlaneShader->Enable();
-	waterPlaneShader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix() * CMatrix44f(float3{0.0f, 10.0f, 0.0f}));
-	waterPlaneShader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
+	waterPlaneShader->SetUniformMatrix4x4<float>("u_movi_mat", false, camera->GetViewMatrix() * CMatrix44f(float3{0.0f, 10.0f, 0.0f}));
+	waterPlaneShader->SetUniformMatrix4x4<float>("u_proj_mat", false, camera->GetProjectionMatrix());
 
 	glBeginQuery(GL_ANY_SAMPLES_PASSED, occlusionQuery);
 	waterPlaneBuffer.Submit(mix(GL_TRIANGLES, GL_TRIANGLE_STRIP, endlessOcean), 0, waterPlaneBuffer.GetNumElems<VA_TYPE_0>());

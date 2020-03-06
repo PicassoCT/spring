@@ -29,6 +29,10 @@ public:
 
 	void ChangeCursor(const std::string& cmdName, const float scale = 1.0f);
 	void ReloadCursors();
+	void ResetCursor() {
+		ChangeCursor("");
+		Update();
+	}
 
 	void Update();
 	void UpdateCursors();
@@ -36,6 +40,7 @@ public:
 	void HideMouse();
 	void ShowMouse();
 	void ToggleMiddleClickScroll(); /// lock+hide
+	void CancelButtonMovement(int button) { buttons[button].movement = 0; }
 	void WarpMouse(int x, int y);
 
 	void DrawSelectionBox(); /// draw mousebox (selection box)
@@ -68,7 +73,7 @@ public:
 
 	std::string GetCurrentTooltip() const;
 
-	const std::string& GetCurrentCursor() const { return newCursor; }
+	const std::string& GetCurrentCursor() const { return queuedCursorName; }
 	float GetCurrentCursorScale() const { return cursorScale; }
 
 	void ToggleHwCursor(bool enable);
@@ -113,19 +118,24 @@ private:
 	bool ignoreMove = false;
 
 	float cursorScale = 1.0f;
-	float dragScrollThreshold = 0.0f;
 
 	float scrollx = 0.0f;
 	float scrolly = 0.0f;
 
 public:
-	float doubleClickTime = 0.0f;
-	float scrollWheelSpeed = 0.0f;
-
 	/// locked mouse indicator size
 	float crossSize = 0.0f;
 	float crossAlpha = 0.0f;
 	float crossMoveScale = 0.0f;
+
+	float doubleClickTime = 0.0f;
+	float scrollWheelSpeed = 0.0f;
+	float dragScrollThreshold = 0.0f;
+
+	int dragSelectionThreshold = 0;
+	int dragBoxCommandThreshold = 0;
+	int dragCircleCommandThreshold = 0;
+	int dragFrontCommandThreshold = 0;
 
 
 	struct ButtonPressEvt {
@@ -144,8 +154,8 @@ public:
 	float3 dir;
 
 private:
-	std::string newCursor; /// cursor changes are delayed
-	std::string cursorText; /// current cursor name
+	std::string queuedCursorName; /// cursor changes are delayed until Update
+	std::string activeCursorName; /// current cursor name
 
 	std::vector<CMouseCursor> loadedCursors;
 	spring::unordered_map<std::string, size_t> cursorFileMap;

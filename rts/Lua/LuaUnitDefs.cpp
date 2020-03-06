@@ -17,7 +17,6 @@
 #include "Sim/Misc/CategoryHandler.h"
 #include "Sim/Misc/CollisionVolume.h"
 #include "Sim/Misc/GlobalSynced.h"
-#include "Sim/Misc/Wind.h"
 #include "Sim/MoveTypes/MoveDefHandler.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/UnitDefHandler.h"
@@ -76,8 +75,9 @@ bool LuaUnitDefs::PushEntries(lua_State* L)
 	const std::array<const IndxFuncType, 3> indxFuncs = {{UnitDefIndex, UnitDefNewIndex, UnitDefMetatable}};
 	const std::array<const IterFuncType, 2> iterFuncs = {{Pairs, Next}};
 
-	for (auto it = defsVec.cbegin(); it != defsVec.cend(); ++it) {
-		const auto def = unitDefHandler->GetUnitDefByID(it->id);
+	for (const auto& unitDef: defsVec) {
+		// The first unitDef is invalid (dummy), so we skip it
+		const auto def = unitDefHandler->GetUnitDefByID(unitDef.id);
 
 		if (def == nullptr)
 			continue;
@@ -138,7 +138,7 @@ static int UnitDefIndex(lua_State* L)
 			return elem.func(L, p);
 		}
 		case ERROR_TYPE: {
-			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in UnitDefs __index", __FUNCTION__, name);
+			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in UnitDefs __index", __func__, name);
 			lua_pushnil(L);
 			return 1;
 		}
@@ -201,7 +201,7 @@ static int UnitDefNewIndex(lua_State* L)
 			return 0;
 		}
 		case ERROR_TYPE: {
-			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in UnitDefs __newindex", __FUNCTION__, name);
+			LOG_L(L_ERROR, "[%s] ERROR_TYPE for key \"%s\" in UnitDefs __newindex", __func__, name);
 			lua_pushnil(L);
 			return 1;
 		}
@@ -244,7 +244,7 @@ static int Pairs(lua_State* L)
 static int UnitDefToID(lua_State* L, const void* data)
 {
 	const UnitDef* ud = *((const UnitDef**)data);
-	if (ud == NULL) {
+	if (ud == nullptr) {
 		return 0;
 	}
 	lua_pushnumber(L, ud->id);
@@ -255,7 +255,7 @@ static int UnitDefToID(lua_State* L, const void* data)
 static int WeaponDefToID(lua_State* L, const void* data)
 {
 	const WeaponDef* wd = *((const WeaponDef**)data);
-	if (wd == NULL) {
+	if (wd == nullptr) {
 		return 0;
 	}
 	lua_pushnumber(L, wd->id);
@@ -266,7 +266,7 @@ static int WeaponDefToID(lua_State* L, const void* data)
 static int WeaponDefToName(lua_State* L, const void* data)
 {
 	const WeaponDef* wd = *((const WeaponDef**)data);
-	if (wd == NULL) {
+	if (wd == nullptr) {
 		return 0;
 	}
 	lua_pushsstring(L, wd->name);
@@ -291,9 +291,9 @@ static int CustomParamsTable(lua_State* L, const void* data)
 	const spring::unordered_map<std::string, std::string>& params = *((const spring::unordered_map<std::string, std::string>*)data);
 	lua_newtable(L);
 
-	for (auto it = params.cbegin(); it != params.cend(); ++it) {
-		lua_pushsstring(L, it->first);
-		lua_pushsstring(L, it->second);
+	for (const auto& param: params) {
+		lua_pushsstring(L, param.first);
+		lua_pushsstring(L, param.second);
 		lua_rawset(L, -3);
 	}
 	return 1;
@@ -308,8 +308,8 @@ static int BuildOptions(lua_State* L, const void* data)
 	lua_newtable(L);
 	int count = 0;
 
-	for (auto it = buildOptions.cbegin(); it != buildOptions.cend(); ++it) {
-		const auto fit = unitDefIDsMap.find(it->second);
+	for (const auto& buildOption: buildOptions) {
+		const auto fit = unitDefIDsMap.find(buildOption.second);
 
 		if (fit != unitDefIDsMap.end()) {
 			count++;
@@ -466,20 +466,6 @@ static int MoveDefTable(lua_State* L, const void* data)
 }
 
 
-static int TotalEnergyOut(lua_State* L, const void* data)
-{
-	const UnitDef& ud = *static_cast<const UnitDef*>(data);
-
-	const float basicEnergy = (ud.energyMake - ud.energyUpkeep);
-	const float tidalEnergy = (ud.tidalGenerator * mapInfo->map.tidalStrength);
-	const float windEnergy = (0.25f * (wind.GetMinWind() + wind.GetMaxWind())) * (ud.windGenerator > 0.0f);
-
-	lua_pushnumber(L, basicEnergy + tidalEnergy + windEnergy); // CUSTOM
-	return 1;
-}
-
-
-
 #define TYPE_FUNC(FuncName, LuaType)                           \
 	static int FuncName(lua_State* L, const void* data)        \
 	{                                                          \
@@ -592,7 +578,8 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_DEPRECATED_FUNCTION("type", ud, ReturnEmptyString);
 	ADD_DEPRECATED_FUNCTION("maxSlope", ud, ReturnMinusOne);
 
-	ADD_FUNCTION("totalEnergyOut", ud, TotalEnergyOut);
+	///!!! ADD_DEPRECATED_LUADEF_KEY("totalEnergyOut");
+	ADD_FLOAT("totalEnergyOut", ud.energyMake);
 
 	ADD_FUNCTION("modCategories",      ud.categoryString,  CategorySetFromString);
 	ADD_FUNCTION("springCategories",   ud.category,        CategorySetFromBits);
@@ -824,7 +811,9 @@ ADD_BOOL("canAttackWater",  canAttackWater); // CUSTOM
 	ADD_INT(  "transportSize",         ud.transportSize);
 	ADD_FLOAT("transportMass",         ud.transportMass);
 	ADD_FLOAT("loadingRadius",         ud.loadingRadius);
-	ADD_BOOL( "isAirBase",             ud.isAirBase);
+
+	ADD_DEPRECATED_LUADEF_KEY("isAirBase");
+
 	ADD_BOOL( "isFirePlatform",        ud.isFirePlatform);
 	ADD_BOOL( "holdSteady",            ud.holdSteady);
 	ADD_BOOL( "releaseHeld",           ud.releaseHeld);

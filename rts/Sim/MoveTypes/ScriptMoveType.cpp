@@ -10,9 +10,9 @@
 #include "Sim/Units/UnitTypes/Building.h"
 #include "System/EventHandler.h"
 #include "System/Matrix44f.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 
-CR_BIND_DERIVED(CScriptMoveType, AMoveType, (NULL))
+CR_BIND_DERIVED(CScriptMoveType, AMoveType, (nullptr))
 CR_REG_METADATA(CScriptMoveType, (
 	CR_MEMBER(tag),
 	CR_MEMBER(extrapolate),
@@ -65,10 +65,8 @@ CScriptMoveType::CScriptMoveType(CUnit* owner):
 	collideStop(false),
 	scriptNotify(0)
 {
-	useHeading = false; // use the transformation matrix instead of heading
-
-	oldPos = owner? owner->pos: ZeroVector;
-	oldSlowUpdatePos = oldPos;
+	// use the transformation matrix instead of heading
+	UseHeading(false);
 }
 
 
@@ -104,7 +102,7 @@ bool CScriptMoveType::Update()
 		// NOTE: only gravitational acc. is allowed to build up velocity
 		// NOTE: strong wind plus low gravity can cause substantial drift
 		const float3 gravVec = UpVector * (mapInfo->map.gravity * gravityFactor);
-		const float3 windVec =            (wind.GetCurrentWind() * windFactor);
+		const float3 windVec =            (envResHandler.GetCurrentWindVec() * windFactor);
 		const float3 unitVec = useRelVel?
 			(owner->frontdir *  relVel.z) +
 			(owner->updir    *  relVel.y) +
@@ -142,7 +140,7 @@ bool CScriptMoveType::Update()
 	CheckLimits();
 
 	if (trackSlope) {
-		owner->UpdateDirVectors(true);
+		owner->UpdateDirVectors(owner->IsOnGround(), owner->IsInAir());
 		owner->UpdateMidAndAimPos();
 	}
 
@@ -210,16 +208,14 @@ void CScriptMoveType::SetRotationVelocity(const float3& _rotVel)
 
 void CScriptMoveType::SetHeading(short heading)
 {
-	owner->SetHeading(heading, trackSlope);
+	owner->SetHeading(heading, trackSlope, false);
 }
 
 
 void CScriptMoveType::SetNoBlocking(bool state)
 {
 	// if false, forces blocking-map updates
-	noBlocking = state;
-
-	if (noBlocking) {
+	if ((noBlocking = state)) {
 		owner->UnBlock();
 	} else {
 		owner->Block();

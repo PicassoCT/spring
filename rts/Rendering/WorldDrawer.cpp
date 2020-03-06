@@ -26,6 +26,7 @@
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/Map/InfoTexture/IInfoTextureHandler.h"
 #include "Rendering/Models/IModelParser.h"
+#include "Rendering/Textures/ColorMap.h"
 #include "Rendering/Textures/3DOTextureHandler.h"
 #include "Rendering/Textures/S3OTextureHandler.h"
 #include "Map/BaseGroundDrawer.h"
@@ -39,6 +40,7 @@
 #include "Game/UI/CommandColors.h"
 #include "Game/UI/GuiHandler.h"
 #include "System/EventHandler.h"
+#include "System/Exceptions.h"
 #include "System/TimeProfiler.h"
 #include "System/SafeUtil.h"
 
@@ -47,6 +49,8 @@ void CWorldDrawer::InitPre() const
 	LuaObjectDrawer::Init();
 	DebugColVolDrawer::Init();
 	cursorIcons.Init();
+
+	CColorMap::InitStatic();
 
 	// these need to be loaded before featureHandler is created
 	// (maps with features have their models loaded at startup)
@@ -65,37 +69,59 @@ void CWorldDrawer::InitPre() const
 
 void CWorldDrawer::InitPost() const
 {
-	loadscreen->SetLoadMessage("Creating ShadowHandler");
-	shadowHandler.Init();
+	char buf[512] = {0};
 
-	// SMFGroundDrawer accesses InfoTextureHandler, create it first
-	loadscreen->SetLoadMessage("Creating InfoTextureHandler");
-	IInfoTextureHandler::Create();
+	{
+		loadscreen->SetLoadMessage("Creating ShadowHandler");
+		shadowHandler.Init();
+	}
+	{
+		// SMFGroundDrawer accesses InfoTextureHandler, create it first
+		loadscreen->SetLoadMessage("Creating InfoTextureHandler");
+		IInfoTextureHandler::Create();
+	}
 
-	loadscreen->SetLoadMessage("Creating GroundDrawer");
-	readMap->InitGroundDrawer();
+	try {
+		loadscreen->SetLoadMessage("Creating GroundDrawer");
+		readMap->InitGroundDrawer();
+	} catch (const content_error& e) {
+		memset(buf, 0, sizeof(buf));
+		snprintf(buf, sizeof(buf), "[WorldDrawer::%s] caught exception \"%s\"", __func__, e.what());
+	}
 
-	loadscreen->SetLoadMessage("Creating TreeDrawer");
-	treeDrawer = ITreeDrawer::GetTreeDrawer();
-	grassDrawer = new CGrassDrawer();
+	{
+		loadscreen->SetLoadMessage("Creating TreeDrawer");
+		treeDrawer = ITreeDrawer::GetTreeDrawer();
+		grassDrawer = new CGrassDrawer();
+	}
+	{
+		inMapDrawerView = new CInMapDrawView();
+		pathDrawer = IPathDrawer::GetInstance();
+	}
+	{
+		heightMapTexture = new HeightMapTexture();
+		farTextureHandler = new CFarTextureHandler();
+	}
+	{
+		IGroundDecalDrawer::Init();
+	}
+	{
+		loadscreen->SetLoadMessage("Creating ProjectileDrawer & UnitDrawer");
 
-	inMapDrawerView = new CInMapDrawView();
-	pathDrawer = IPathDrawer::GetInstance();
+		CProjectileDrawer::InitStatic();
+		CUnitDrawer::InitStatic();
+		// see ::InitPre
+		// CFeatureDrawer::InitStatic();
+	}
 
-	heightMapTexture = new HeightMapTexture();
-	farTextureHandler = new CFarTextureHandler();
+	// rethrow to force exit
+	if (buf[0] != 0)
+		throw content_error(buf);
 
-	IGroundDecalDrawer::Init();
-
-	loadscreen->SetLoadMessage("Creating ProjectileDrawer & UnitDrawer");
-
-	CProjectileDrawer::InitStatic();
-	CUnitDrawer::InitStatic();
-	// see ::LoadPre
-	// CFeatureDrawer::InitStatic();
-
-	loadscreen->SetLoadMessage("Creating Water");
-	water = IWater::GetWater(NULL, -1);
+	{
+		loadscreen->SetLoadMessage("Creating Water");
+		water = IWater::GetWater(nullptr, -1);
+	}
 }
 
 
@@ -136,14 +162,12 @@ void CWorldDrawer::Kill()
 
 void CWorldDrawer::Update(bool newSimFrame)
 {
-	SCOPED_TIMER("Update::World");
+	SCOPED_TIMER("Update::WorldDrawer");
 	LuaObjectDrawer::Update(numUpdates == 0);
 	readMap->UpdateDraw(numUpdates == 0);
 
-	if (globalRendering->drawGround) {
-		SCOPED_TIMER("Update::World::Terrain");
+	if (globalRendering->drawGround)
 		(readMap->GetGroundDrawer())->Update();
-	}
 
 	// XXX: done in CGame, needs to get updated even when !doDrawWorld
 	// (it updates unitdrawpos which is used for maximized minimap too)
@@ -155,8 +179,13 @@ void CWorldDrawer::Update(bool newSimFrame)
 
 	if (newSimFrame) {
 		projectileDrawer->UpdateTextures();
-		sky->Update();
-		water->Update();
+
+		{
+			SCOPED_TIMER("Update::WorldDrawer::{Sky,Water}");
+
+			sky->Update();
+			water->Update();
+		}
 
 		// once every simframe is frequent enough here
 		// NB: errors will not be logged until frame 0
@@ -189,22 +218,19 @@ void CWorldDrawer::GenerateIBLTextures() const
 			sky->UpdateSkyTexture();
 		}
 		{
-			SCOPED_TIMER("Draw::World::UpdateShadingTexture");
+			SCOPED_TIMER("Draw::World::UpdateShadingTex");
 			readMap->UpdateShadingTexture();
 		}
 	}
 
-	if (FBO::IsSupported())
-		FBO::Unbind();
+	FBO::Unbind();
 
 	// restore the normal active camera's VP
 	camera->LoadViewPort();
 }
 
-void CWorldDrawer::ResetMVPMatrices() const
+void CWorldDrawer::SetupScreenState() const
 {
-	glSpringMatrix2dSetupPV(0.0f, 1.0f, 0.0f, 1.0f, -1.0f, 1.0f);
-
 	glAttribStatePtr->DisableDepthTest();
 	glAttribStatePtr->EnableBlendMask();
 	glAttribStatePtr->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -275,10 +301,7 @@ void CWorldDrawer::DrawOpaqueObjects() const
 	}
 
 	selectedUnitsHandler.Draw();
-	{
-		SCOPED_TIMER("Draw::World::PreUnit");
-		eventHandler.DrawWorldPreUnit();
-	}
+	eventHandler.DrawWorldPreUnit();
 
 	{
 		SCOPED_TIMER("Draw::World::Models::Opaque");
@@ -332,10 +355,10 @@ void CWorldDrawer::DrawMiscObjects() const
 
 	{
 		// note: duplicated in CMiniMap::DrawWorldStuff()
-		commandDrawer->DrawLuaQueuedUnitSetCommands();
+		commandDrawer->DrawLuaQueuedUnitSetCommands(false);
 
 		if (cmdColors.AlwaysDrawQueue() || guihandler->GetQueueKeystate())
-			selectedUnitsHandler.DrawCommands();
+			selectedUnitsHandler.DrawCommands(false);
 	}
 
 	// either draw from here, or make {Dyn,Bump}Water use blending
@@ -384,8 +407,11 @@ void CWorldDrawer::DrawBelowWaterOverlay() const
 			buffer->SafeAppend({{cpos.x - cpos.w, 0.0f, cpos.z - cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
 			buffer->SafeAppend({{cpos.x - cpos.w, 0.0f, cpos.z + cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
 			buffer->SafeAppend({{cpos.x + cpos.w, 0.0f, cpos.z + cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
+
+			buffer->SafeAppend({{cpos.x + cpos.w, 0.0f, cpos.z + cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
 			buffer->SafeAppend({{cpos.x + cpos.w, 0.0f, cpos.z - cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
-			buffer->Submit(GL_QUADS);
+			buffer->SafeAppend({{cpos.x - cpos.w, 0.0f, cpos.z - cpos.w}, {0.0f, 0.5f, 0.3f, 0.50f}});
+			buffer->Submit(GL_TRIANGLES);
 		}
 
 		{
@@ -419,8 +445,11 @@ void CWorldDrawer::DrawBelowWaterOverlay() const
 		buffer->SafeAppend({{0.0f, 0.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
 		buffer->SafeAppend({{1.0f, 0.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
 		buffer->SafeAppend({{1.0f, 1.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
+
+		buffer->SafeAppend({{1.0f, 1.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
 		buffer->SafeAppend({{0.0f, 1.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
-		buffer->Submit(GL_QUADS);
+		buffer->SafeAppend({{0.0f, 0.0f, -1.0f}, {0.0f, 0.2f, 0.8f, 0.333f}});
+		buffer->Submit(GL_TRIANGLES);
 
 		shader->Disable();
 	}

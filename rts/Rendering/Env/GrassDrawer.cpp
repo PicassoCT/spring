@@ -21,12 +21,11 @@
 #include "Sim/Misc/Wind.h"
 #include "System/EventHandler.h"
 #include "System/GlobalRNG.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/Color.h"
 #include "System/Exceptions.h"
 #include "System/StringUtil.h"
-#include "System/Threading/ThreadPool.h"
 #include "System/TimeProfiler.h"
 #include "System/Log/ILog.h"
 #include "System/FileSystem/FileHandler.h"
@@ -51,7 +50,7 @@ public:
 		inViewQuads.reserve(32);
 	}
 	void DrawQuad(int x, int y) override {
-		inViewQuads.push_back({x, y});
+		inViewQuads.emplace_back(x, y);
 	}
 
 public:
@@ -214,11 +213,11 @@ bool CGrassDrawer::LoadGrassShaders() {
 		grassShaders[i]->SetUniform("specularExponent", sunLighting->specularExponent);
 		grassShaders[i]->SetUniform("groundShadowDensity", sunLighting->groundShadowDensity);
 		grassShaders[i]->SetUniform("gammaExponent", globalRendering->gammaExponent);
-		grassShaders[i]->SetUniform4v<const char*, float>("shadowParams", shadowHandler.GetShadowParams());
-		grassShaders[i]->SetUniform4v<const char*, float>("fogColor", sky->fogColor);
-		grassShaders[i]->SetUniformMatrix4x4<const char*, float>("shadowMatrix", false, shadowHandler.GetShadowViewMatrix());
-		grassShaders[i]->SetUniformMatrix4x4<const char*, float>("viewMatrix", false, camera->GetViewMatrix());
-		grassShaders[i]->SetUniformMatrix4x4<const char*, float>("projMatrix", false, camera->GetProjectionMatrix());
+		grassShaders[i]->SetUniform4v<float>("shadowParams", shadowHandler.GetShadowParams());
+		grassShaders[i]->SetUniform4v<float>("fogColor", sky->fogColor);
+		grassShaders[i]->SetUniformMatrix4x4<float>("shadowMatrix", false, shadowHandler.GetShadowViewMatrix());
+		grassShaders[i]->SetUniformMatrix4x4<float>("viewMatrix", false, camera->GetViewMatrix());
+		grassShaders[i]->SetUniformMatrix4x4<float>("projMatrix", false, camera->GetProjectionMatrix());
 		grassShaders[i]->Disable();
 		grassShaders[i]->Validate();
 
@@ -331,7 +330,7 @@ void CGrassDrawer::CreateGrassBladeTex(uint8_t* buf)
 
 
 void CGrassDrawer::EnableShader(const GrassShaderProgram type) {
-	const float3 windSpeed = wind.GetCurrentDirection() * wind.GetCurrentStrength() * mapInfo->grass.bladeWaveScale;
+	const float3 windSpeed = envResHandler.GetCurrentWindVec() * mapInfo->grass.bladeWaveScale;
 	const float3 fogParams = {sky->fogStart, sky->fogEnd, camera->GetFarPlaneDist()};
 
 	Shader::IProgramObject* ipo = (grassShaders[GRASS_PROGRAM_CURR] = grassShaders[type]);
@@ -351,17 +350,17 @@ void CGrassDrawer::EnableShader(const GrassShaderProgram type) {
 	ipo->SetUniform("specularExponent"   , sunLighting->specularExponent);
 	ipo->SetUniform("groundShadowDensity", sunLighting->groundShadowDensity);
 	ipo->SetUniform("gammaExponent"      , globalRendering->gammaExponent);
-	ipo->SetUniformMatrix4x4<const char*, float>("shadowMatrix", false, shadowHandler.GetShadowViewMatrix());
-	ipo->SetUniform4v<const char*, float>("shadowParams", shadowHandler.GetShadowParams());
+	ipo->SetUniformMatrix4x4<float>("shadowMatrix", false, shadowHandler.GetShadowViewMatrix());
+	ipo->SetUniform4v<float>("shadowParams", shadowHandler.GetShadowParams());
 
 	switch (type) {
 		case GRASS_PROGRAM_OPAQUE: {
-			ipo->SetUniformMatrix4x4<const char*, float>("viewMatrix", false, camera->GetViewMatrix());
-			ipo->SetUniformMatrix4x4<const char*, float>("projMatrix", false, camera->GetProjectionMatrix());
+			ipo->SetUniformMatrix4x4<float>("viewMatrix", false, camera->GetViewMatrix());
+			ipo->SetUniformMatrix4x4<float>("projMatrix", false, camera->GetProjectionMatrix());
 		} break;
 		case GRASS_PROGRAM_SHADOW: {
-			ipo->SetUniformMatrix4x4<const char*, float>("viewMatrix", false, shadowHandler.GetShadowViewMatrix());
-			ipo->SetUniformMatrix4x4<const char*, float>("projMatrix", false, shadowHandler.GetShadowProjMatrix());
+			ipo->SetUniformMatrix4x4<float>("viewMatrix", false, shadowHandler.GetShadowViewMatrix());
+			ipo->SetUniformMatrix4x4<float>("projMatrix", false, shadowHandler.GetShadowProjMatrix());
 		} break;
 		default: {
 		} break;
@@ -476,8 +475,6 @@ void CGrassDrawer::Update()
 	updateVisibility |= (prvUpdateCamDir != cam->GetDir());
 
 	if (updateVisibility) {
-		SCOPED_TIMER("Update::Update::Grass");
-
 		prvUpdateCamPos = cam->GetPos();
 		prvUpdateCamDir = cam->GetDir();
 
@@ -495,9 +492,8 @@ void CGrassDrawer::SetupStateShadow()
 	EnableShader(GRASS_PROGRAM_SHADOW);
 
 	glActiveTexture(GL_TEXTURE0);
-	glAttribStatePtr->DisableAlphaTest();
-	glAttribStatePtr->DisableCullFace();
 
+	glAttribStatePtr->DisableCullFace();
 	glAttribStatePtr->PolygonOffset(5.0f, 15.0f);
 	glAttribStatePtr->PolygonOffsetFill(GL_TRUE);
 }
@@ -506,7 +502,6 @@ void CGrassDrawer::ResetStateShadow()
 {
 	glAttribStatePtr->EnableCullFace();
 	glAttribStatePtr->PolygonOffsetFill(GL_FALSE);
-	glAttribStatePtr->DisableAlphaTest();
 
 	grassShaders[GRASS_PROGRAM_CURR]->Disable();
 }
@@ -559,7 +554,6 @@ void CGrassDrawer::SetupStateOpaque()
 
 	glActiveTexture(GL_TEXTURE0);
 	glAttribStatePtr->DisableBlendMask();
-	glAttribStatePtr->DisableAlphaTest();
 	glAttribStatePtr->EnableDepthMask();
 }
 
@@ -581,7 +575,6 @@ void CGrassDrawer::Draw()
 	if (!defDrawGrass || readMap->GetGrassShadingTexture() == 0)
 		return;
 
-	SCOPED_TIMER("Draw::World::Foliage::Grass");
 	glAttribStatePtr->PushBits(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT);
 
 	if (!blockDrawer.inViewQuads.empty()) {

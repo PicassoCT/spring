@@ -7,6 +7,7 @@
 #include <vector>
 #include <cinttypes>
 
+#include "ArchiveTypes.h"
 #include "System/Sync/SHA512.hpp"
 #include "System/UnorderedMap.hpp"
 
@@ -21,14 +22,16 @@
 class IArchive
 {
 protected:
-	IArchive(const std::string& archiveName): archiveFile(archiveName) {
+	IArchive(const std::string& archiveFile): archiveFile(archiveFile) {
 	}
 
 public:
 	virtual ~IArchive() {}
 
+	virtual int GetType() const = 0;
+
 	virtual bool IsOpen() = 0;
-	const std::string& GetArchiveName() const { return archiveFile; }
+	const std::string& GetArchiveFile() const { return archiveFile; }
 
 	/**
 	 * @return The amount of files in the archive, does not change during
@@ -121,7 +124,7 @@ public:
 	/**
 	 * Fetches the (SHA512) hash of a file by its ID.
 	 */
-	virtual bool CalcHash(uint32_t fid, uint8_t hash[sha512::SHA_LEN]);
+	virtual bool CalcHash(uint32_t fid, uint8_t hash[sha512::SHA_LEN], std::vector<std::uint8_t>& fb);
 
 
 protected:

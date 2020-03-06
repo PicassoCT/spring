@@ -10,6 +10,7 @@
 #include "MouseHandler.h"
 #include "Game/Camera.h"
 #include "Rendering/GL/RenderDataBufferFwd.hpp"
+#include "Rendering/GL/WideLineAdapterFwd.hpp"
 #include "Sim/Units/BuildInfo.h"
 #include "Sim/Units/CommandAI/Command.h"
 
@@ -148,9 +149,19 @@ private:
 
 
 	void DrawMiniMapMarker(const float3& cameraPos);
-	void DrawFormationFrontOrder(int button, float maxSize, float sizeDiv, bool onMiniMap, const float3& cameraPos, const float3& mouseDir);
-	void DrawSelectBox(GL::RenderDataBufferC* rdb, Shader::IProgramObject* ipo, const float3& start, const float3& end);
-	void DrawSelectCircle(GL::RenderDataBufferC* rdb, Shader::IProgramObject* ipo, const float4& pos, const float* color);
+	void DrawFormationFrontOrder(
+		GL::RenderDataBufferC* buffer,
+		GL::WideLineAdapterC* wla,
+		Shader::IProgramObject* shader,
+		const float3& cameraPos,
+		const float3& mouseDir,
+		int button,
+		float maxSize,
+		float sizeDiv,
+		bool onMiniMap
+	);
+	void DrawSelectBox(GL::RenderDataBufferC* rdb, GL::WideLineAdapterC* wla, Shader::IProgramObject* ipo, const float3& start, const float3& end);
+	void DrawSelectCircle(GL::RenderDataBufferC* rdb, GL::WideLineAdapterC* wla, Shader::IProgramObject* ipo, const float4& pos, const float* color);
 
 
 	int  IconAtPos(int x, int y);
@@ -232,7 +243,6 @@ private:
 	bool attackRect = false;
 	bool invColorSelect = true;
 	bool frontByEnds = false;
-
 
 	struct Box {
 		float x1 = 0.0f;

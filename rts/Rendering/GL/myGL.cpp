@@ -1,7 +1,5 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include <array>
-#include <string>
 #include <cmath>
 
 #include <SDL.h>
@@ -11,35 +9,14 @@
 #endif
 
 #include "myGL.h"
-#include "MatrixState.hpp"
-#include "VertexArray.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/Textures/Bitmap.h"
-#include "System/Matrix44f.h"
 #include "System/Log/ILog.h"
-#include "System/Exceptions.h"
-#include "System/StringUtil.h"
-#include "System/Config/ConfigHandler.h"
-#include "System/FileSystem/FileHandler.h"
 #include "System/Platform/MessageBox.h"
+#include "System/StringUtil.h"
 
 #define SDL_BPP(fmt) SDL_BITSPERPIXEL((fmt))
 
-static std::array<CVertexArray, 2> vertexArrays;
-static int currentVertexArray = 0;
-
-
-/******************************************************************************/
-/******************************************************************************/
-
-CVertexArray* GetVertexArray()
-{
-	currentVertexArray += 1;
-	currentVertexArray %= vertexArrays.size();
-	return &vertexArrays[currentVertexArray];
-}
-
-/******************************************************************************/
 
 bool CheckAvailableVideoModes()
 {
@@ -197,24 +174,20 @@ bool ShowDriverWarning(const char* glVendor, const char* glRenderer)
 	assert(glVendor != nullptr);
 	assert(glRenderer != nullptr);
 
-	const std::string& _glVendor = StringToLower(glVendor);
-	// const std::string& _glRenderer = StringToLower(glRenderer);
-
 	// should be unreachable
 	// note that checking for Microsoft stubs is no longer required
 	// (context-creation will fail if no vendor-specific or pre-GL3
 	// drivers are installed)
-	if (_glVendor.find("unknown") != std::string::npos)
+	if (StrCaseStr(glVendor, "unknown") != nullptr)
 		return false;
 
-	if (_glVendor.find("vmware") != std::string::npos) {
+	if (StrCaseStr(glVendor, "vmware") != nullptr) {
 		const char* msg =
 			"Running Spring with virtualized drivers can result in severely degraded "
 			"performance and is discouraged. Prefer to use your host operating system.";
 
 		LOG_L(L_WARNING, "%s", msg);
 		Platform::MsgBox(msg, "Warning", MBF_EXCL);
-		return true;
 	}
 
 	return true;
@@ -312,75 +285,16 @@ void glBuildMipmaps(const GLenum target, GLint internalFormat, const GLsizei wid
 				internalFormat = GL_COMPRESSED_RGB;
 			break;
 
-			case GL_LUMINANCE:
-				internalFormat = GL_COMPRESSED_LUMINANCE;
-			break;
+			default: {
+			} break;
 		}
 	}
 
 	// create mipmapped texture
 	glTexImage2D(target, 0, internalFormat, width, height, 0, format, type, data);
-	if (globalRendering->atiHacks) {
-		glEnable(target);
-		glGenerateMipmap(target);
-		glDisable(target);
-	} else {
-		glGenerateMipmap(target);
-	}
+	glGenerateMipmap(target);
 }
 
-
-
-
-static void LoadProjMat2D(float l, float r, float b, float t, float n, float f,  bool push) {
-	GL::MatrixMode(GL_PROJECTION);
-
-	if (push)
-		GL::PushMatrix();
-
-	GL::LoadMatrix(CMatrix44f::ClipControl(globalRendering->supportClipSpaceControl) * CMatrix44f::OrthoProj(l, r, b, t, n, f));
-}
-
-static void LoadViewMat2D(bool push) {
-	GL::MatrixMode(GL_MODELVIEW);
-
-	if (push)
-		GL::PushMatrix();
-
-	GL::LoadIdentity();
-}
-
-
-void glSpringMatrix2dSetupVP(float l, float r, float b, float t, float n, float f,  bool pv, bool pp)
-{
-	LoadViewMat2D(pv);
-	LoadProjMat2D(l, r, b, t, n, f,  pp);
-}
-void glSpringMatrix2dSetupPV(float l, float r, float b, float t, float n, float f,  bool pv, bool pp)
-{
-	LoadProjMat2D(l, r, b, t, n, f,  pp);
-	LoadViewMat2D(pv);
-}
-
-void glSpringMatrix2dResetVP(bool pv, bool pp) {
-	GL::MatrixMode(GL_MODELVIEW);
-	if (pv)
-		GL::PopMatrix();
-
-	GL::MatrixMode(GL_PROJECTION);
-	if (pp)
-		GL::PopMatrix();
-}
-
-void glSpringMatrix2dResetPV(bool pv, bool pp) {
-	GL::MatrixMode(GL_PROJECTION);
-	if (pp)
-		GL::PopMatrix();
-
-	GL::MatrixMode(GL_MODELVIEW);
-	if (pv)
-		GL::PopMatrix();
-}
 
 
 /******************************************************************************/
@@ -393,6 +307,7 @@ void ClearScreen()
 	glAttribStatePtr->EnableBlendMask();
 	glAttribStatePtr->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
+
 
 
 /******************************************************************************/

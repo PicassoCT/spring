@@ -16,7 +16,7 @@
 #include "Sim/MoveTypes/HoverAirMoveType.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Log/ILog.h"
 #include "System/Sync/HsiehHash.h"
 
@@ -116,8 +116,7 @@ static inline DerivedMoveType* ParseDerivedMoveType(lua_State* L, const char* ca
 	if (unit == nullptr)
 		return nullptr;
 
-	if (unit->moveType == nullptr)
-		return nullptr;
+	assert(unit->moveType != nullptr);
 
 	return (dynamic_cast<DerivedMoveType*>(unit->moveType));
 }

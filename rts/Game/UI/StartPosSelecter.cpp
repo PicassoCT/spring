@@ -112,8 +112,8 @@ void CStartPosSelecter::DrawStartBox(GL::RenderDataBufferC* buffer, Shader::IPro
 
 	// draw starting-rectangle restrictions
 	for (int a = 0; a < 10; ++a) {
-		float3 pos1(bx + (a    ) * dx, 0.0f, by);
-		float3 pos2(bx + (a + 1) * dx, 0.0f, by);
+		float3 pos1(bx + (a    ) * dx, 0.0f, by); // tl
+		float3 pos2(bx + (a + 1) * dx, 0.0f, by); // tr
 
 		pos1.y = CGround::GetHeightAboveWater(pos1.x, pos1.z, false);
 		pos2.y = CGround::GetHeightAboveWater(pos2.x, pos2.z, false);
@@ -121,7 +121,11 @@ void CStartPosSelecter::DrawStartBox(GL::RenderDataBufferC* buffer, Shader::IPro
 		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+
+		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos1 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
+
 
 		pos1 = float3(bx + (a    ) * dx, 0.0f, by + dy * 10.0f);
 		pos2 = float3(bx + (a + 1) * dx, 0.0f, by + dy * 10.0f);
@@ -131,7 +135,11 @@ void CStartPosSelecter::DrawStartBox(GL::RenderDataBufferC* buffer, Shader::IPro
 		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+
+		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos1 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
+
 
 		pos1 = float3(bx, 0.0f, by + dy * (a    ));
 		pos2 = float3(bx, 0.0f, by + dy * (a + 1));
@@ -141,7 +149,11 @@ void CStartPosSelecter::DrawStartBox(GL::RenderDataBufferC* buffer, Shader::IPro
 		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+
+		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos1 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
+
 
 		pos1 = float3(bx + dx * 10.0f, 0.0f, by + dy * (a    ));
 		pos2 = float3(bx + dx * 10.0f, 0.0f, by + dy * (a + 1));
@@ -151,13 +163,16 @@ void CStartPosSelecter::DrawStartBox(GL::RenderDataBufferC* buffer, Shader::IPro
 		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+
+		buffer->SafeAppend({pos2 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
 		buffer->SafeAppend({pos1 + UpVector * 100.0f, {0.2f, 0.8f, 0.2f, 0.5f}});
+		buffer->SafeAppend({pos1                    , {0.2f, 0.8f, 0.2f, 0.5f}});
 	}
 
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
-	buffer->Submit(GL_QUADS);
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+	buffer->Submit(GL_TRIANGLES);
 	shader->Disable();
 
 	glAttribStatePtr->DisableDepthTest();
@@ -187,7 +202,6 @@ void CStartPosSelecter::Draw()
 
 
 	glAttribStatePtr->EnableBlendMask();
-	glAttribStatePtr->DisableAlphaTest();
 
 	{
 		gleDrawQuadC(readyBox, InBox(mx, my, readyBox)? SColor{0.7f, 0.2f, 0.2f, guiAlpha}: SColor{0.7f, 0.7f, 0.2f, guiAlpha}, buffer);
@@ -204,9 +218,9 @@ void CStartPosSelecter::Draw()
 	}
 	{
 		shader->Enable();
-		shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
-		buffer->Submit(GL_QUADS);
+		shader->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shader->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::ClipOrthoProj01(globalRendering->supportClipSpaceControl * 1.0f));
+		buffer->Submit(GL_TRIANGLES);
 		shader->Disable();
 	}
 

@@ -19,6 +19,7 @@ CONFIG(bool, CubeTexGenerateMipMaps).defaultValue(false);
 
 CubeMapHandler cubeMapHandler;
 
+
 bool CubeMapHandler::Init() {
 	envReflectionTexID = 0;
 	skyReflectionTexID = 0;
@@ -33,15 +34,15 @@ bool CubeMapHandler::Init() {
 		glBindTexture(GL_TEXTURE_CUBE_MAP, envReflectionTexID);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, generateMipMaps? GL_LINEAR_MIPMAP_LINEAR: GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER,                                           GL_LINEAR); // magnification doesn't use mips
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, globalRendering->supportSeamlessCubeMaps? GL_MIRRORED_REPEAT: GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, globalRendering->supportSeamlessCubeMaps? GL_MIRRORED_REPEAT: GL_CLAMP_TO_EDGE);
 
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 
 	if (generateMipMaps)
@@ -55,12 +56,12 @@ bool CubeMapHandler::Init() {
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGBA8, reflectionTexSize, reflectionTexSize, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	}
 
 
@@ -102,12 +103,12 @@ void CubeMapHandler::UpdateReflectionTexture()
 	reflectionCubeFBO.Bind();
 
 	switch (currReflectionFace) {
-		case 0: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_X,  RgtVector, false); } break;
-		case 1: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, -RgtVector, false); } break;
-		case 2: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  UpVector,  false); } break;
-		case 3: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, -UpVector,  false); } break;
-		case 4: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  FwdVector, false); } break;
-		case 5: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, -FwdVector, false); } break;
+		case 0: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_X, false); } break;
+		case 1: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, false); } break;
+		case 2: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, false); } break;
+		case 3: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, false); } break;
+		case 4: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, false); } break;
+		case 5: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, false); } break;
 		default: {} break;
 	}
 
@@ -116,12 +117,12 @@ void CubeMapHandler::UpdateReflectionTexture()
 		// by reusing data from previous frame we could also
 		// make terrain reflect itself, not just the sky
 		switch (currReflectionFace) {
-			case  6: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_X,  RgtVector, true); } break;
-			case  7: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, -RgtVector, true); } break;
-			case  8: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Y,  UpVector,  true); } break;
-			case  9: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, -UpVector,  true); } break;
-			case 10: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Z,  FwdVector, true); } break;
-			case 11: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, -FwdVector, true); } break;
+			case  6: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_X, true); } break;
+			case  7: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, true); } break;
+			case  8: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, true); } break;
+			case  9: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, true); } break;
+			case 10: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, true); } break;
+			case 11: { CreateReflectionFace(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, true); } break;
 			default: {} break;
 		}
 
@@ -140,9 +141,9 @@ void CubeMapHandler::UpdateReflectionTexture()
 	}
 }
 
-void CubeMapHandler::CreateReflectionFace(unsigned int glType, const float3& camDir, bool skyOnly)
+void CubeMapHandler::CreateReflectionFace(unsigned int glFace, bool skyOnly)
 {
-	reflectionCubeFBO.AttachTexture((skyOnly? skyReflectionTexID: envReflectionTexID), glType);
+	reflectionCubeFBO.AttachTexture((skyOnly? skyReflectionTexID: envReflectionTexID), glFace);
 
 	glAttribStatePtr->PushDepthBufferBit();
 	glAttribStatePtr->ClearColor(sky->fogColor[0], sky->fogColor[1], sky->fogColor[2], 1.0f);
@@ -161,53 +162,25 @@ void CubeMapHandler::CreateReflectionFace(unsigned int glType, const float3& cam
 		CCamera* prvCam = CCameraHandler::GetSetActiveCamera(CCamera::CAMTYPE_ENVMAP);
 		CCamera* curCam = CCameraHandler::GetActiveCamera();
 
-		bool draw = true;
-
-		#if 0
-		switch (glType) {
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_X: { glAttribStatePtr->ClearColor(1.0f, 0.0f, 0.0f, 1.0f); draw = false; } break; // red
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_X: { glAttribStatePtr->ClearColor(0.0f, 1.0f, 0.0f, 1.0f); draw = false; } break; // green
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Y: { glAttribStatePtr->ClearColor(0.0f, 0.0f, 1.0f, 1.0f); draw = false; } break; // blue
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: { glAttribStatePtr->ClearColor(1.0f, 1.0f, 0.0f, 1.0f); draw = false; } break; // yellow
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Z: { glAttribStatePtr->ClearColor(1.0f, 0.0f, 1.0f, 1.0f); draw = false; } break; // purple
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: { glAttribStatePtr->ClearColor(0.0f, 1.0f, 1.0f, 1.0f); draw = false; } break; // cyan
-			default: {} break;
-		}
-
-		glAttribStatePtr->Clear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
-		#endif
-
-		#if 1
-		// work around CCameraHandler::GetRgtFromRot bugs
-		switch (glType) {
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_X: { /*fwd =  Rgt*/ curCam->right =  FwdVector; curCam->up =   UpVector; } break;
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_X: { /*fwd = -Rgt*/ curCam->right = -FwdVector; curCam->up =   UpVector; } break;
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Y: { /*fwd =   Up*/ curCam->right =  RgtVector; curCam->up = -FwdVector; } break;
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y: { /*fwd =  -Up*/ curCam->right =  RgtVector; curCam->up =  FwdVector; } break;
-			case GL_TEXTURE_CUBE_MAP_POSITIVE_Z: { /*fwd =  Fwd*/ curCam->right = -RgtVector; curCam->up =   UpVector; } break;
-			case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z: { /*fwd = -Fwd*/ curCam->right =  RgtVector; curCam->up =   UpVector; } break;
-			default: {} break;
-		}
-
-		if (draw) {
+		if (globalRendering->drawDebugCubeMap) {
+			glAttribStatePtr->ClearColor(&faceColors[glFace - GL_TEXTURE_CUBE_MAP_POSITIVE_X].x);
+			glAttribStatePtr->Clear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+		} else {
 			// env-reflections are only correct when drawn from an inverted
 			// perspective (meaning right becomes left and up becomes down)
-			curCam->forward  = camDir;
-			curCam->right   *= -1.0f;
-			curCam->up      *= -1.0f;
+			curCam->forward  = faceDirs[glFace - GL_TEXTURE_CUBE_MAP_POSITIVE_X][0];
+			curCam->right    = faceDirs[glFace - GL_TEXTURE_CUBE_MAP_POSITIVE_X][1] * -1.0f;
+			curCam->up       = faceDirs[glFace - GL_TEXTURE_CUBE_MAP_POSITIVE_X][2] * -1.0f;
 
-			// we want a *horizontal* FOV of 90 degrees; this gets us close
-			// enough (assumes a 16:10 horizontal aspect-ratio common case)
-			curCam->SetVFOV(64.0f);
+			// set vertical *and* horizontal FOV to 90 degrees
+			curCam->SetVFOV(90.0f);
+			curCam->SetAspectRatio(1.0f);
 			curCam->SetPos(prvCam->GetPos());
-			#else
-			curCam->SetRotZ(0.0f);
-			curCam->SetDir(camDir);
-			#endif
 
 			curCam->UpdateLoadViewPort(0, 0, reflectionTexSize, reflectionTexSize);
-			// update matrices (not dirs or viewport)
-			curCam->Update(false, true, false);
+			curCam->UpdateViewRange();
+			curCam->UpdateMatrices(globalRendering->viewSizeX, globalRendering->viewSizeY, curCam->GetAspectRatio());
+			curCam->UpdateFrustum();
 
 			// generate the face
 			game->SetDrawMode(Game::ReflectionDraw);

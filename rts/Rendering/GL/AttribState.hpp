@@ -50,9 +50,9 @@ namespace GL {
 		void PushColorBufferBit();
 		void PushDepthBufferBit();
 		void PushStencilBufferBit();
-		void PushScissorBit();
 		void PushTextureBit();
 		void PushViewPortBit();
+		void PushScissorBit();
 
 
 		void DepthRange(float zn, float zf);
@@ -178,6 +178,12 @@ namespace GL {
 		void PushViewPort() { PushViewPort(viewportStack.Top()); }
 		void PopViewPort();
 
+		// scissor (GLint)
+		void Scissor(int32_t x, int32_t y, int32_t w, int32_t h);
+		void PushScissor(int32_t x, int32_t y, int32_t w, int32_t h);
+		void PushScissor() { PushScissor(scissorStack.Top()); }
+		void PopScissor();
+
 		// front-face (GLuint)
 		void FrontFace(uint32_t face);
 		void PushFrontFace(uint32_t face);
@@ -208,16 +214,11 @@ namespace GL {
 		void PushColorMask() { PushColorMask(colorMaskStack.Top()); }
 		void PopColorMask();
 
-		// line-width (GLfloat)
-		void LineWidth(float w);
-		void PushLineWidth(float w);
-		void PushLineWidth() { PushLineWidth(lineWidthStack.Top()); }
-		void PopLineWidth();
-
 		// uncaptured state
 		void Clear(uint32_t bits);
 		void ClearAccum(float r, float g, float b, float a);
 		void ClearColor(float r, float g, float b, float a);
+		void ClearColor(const float* c) { ClearColor(c[0], c[1], c[2], c[3]); }
 		void ClearDepth(float depth);
 		void ClearStencil(uint32_t rval);
 
@@ -270,6 +271,12 @@ namespace GL {
 			int32_t w;
 			int32_t h;
 		};
+		struct ScissorState {
+			int32_t x;
+			int32_t y;
+			int32_t w;
+			int32_t h;
+		};
 
 		void DepthRange(const DepthRangeState& v) { DepthRange(v.zn, v.zf); }
 		void AlphaFunc(const AlphaFuncState& v) { AlphaFunc(v.func, v.rval); }
@@ -281,6 +288,7 @@ namespace GL {
 		void PolygonMode(const PolyModeState& v) { PolygonMode(v.side, v.mode); }
 		void PolygonOffset(const PolyOffsetState& v) { PolygonOffset(v.factor, v.units); }
 		void ViewPort(const ViewPortState& v) { ViewPort(v.x, v.y, v.w, v.h); }
+		void Scissor(const ScissorState& v) { Scissor(v.x, v.y, v.w, v.h); }
 
 		void PushDepthRange(const DepthRangeState& v) { PushDepthRange(v.zn, v.zf); }
 		void PushAlphaFunc(const AlphaFuncState& v) { PushAlphaFunc(v.func, v.rval); }
@@ -292,6 +300,7 @@ namespace GL {
 		void PushPolygonMode(const PolyModeState& v) { PushPolygonMode(v.side, v.mode); }
 		void PushPolygonOffset(const PolyOffsetState& v) { PushPolygonOffset(v.factor, v.units); }
 		void PushViewPort(const ViewPortState& v) { PushViewPort(v.x, v.y, v.w, v.h); }
+		void PushScissor(const ScissorState& v) { PushScissor(v.x, v.y, v.w, v.h); }
 
 	private:
 		template<typename T, size_t S> struct ArrayStack {
@@ -302,17 +311,20 @@ namespace GL {
 			const T& Push(const T& v) {
 				// return the top element post-push
 				// assert(size < S);
-				stack[size] = v;
 
-				size += 1;
-				size &= (S - 1);
-				return stack[size - 1];
+				size += (size < S);
+				// size &= (S - 1);
+
+				return (stack[size - 1] = v);
 			}
 			const T& Pop(bool post) {
-				// assert(size > post);
 				// return the top element pre- or post-pop
-				size -= 1;
-				size &= (S - 1);
+				// assert(size > post);
+
+				post &= (size > 1);
+				size -= (size > 0);
+				// size &= (S - 1);
+
 				return stack[size - post];
 			}
 
@@ -354,7 +366,7 @@ namespace GL {
 		ArrayStack<BlendColorState , 64>  blendColorStack;
 		ArrayStack<ColorMaskState  , 64>   colorMaskStack;
 		ArrayStack<ViewPortState   , 64>    viewportStack;
-		ArrayStack<float           , 64>   lineWidthStack;
+		ArrayStack< ScissorState   , 64>     scissorStack;
 	};
 
 

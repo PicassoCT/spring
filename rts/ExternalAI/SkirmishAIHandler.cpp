@@ -49,7 +49,9 @@ void CSkirmishAIHandler::ResetState()
 	skirmishAIDataMap.clear();
 	luaAIShortNames.clear();
 
+	numSkirmishAIs = 0;
 	currentAIId = MAX_AIS;
+
 	gameInitialized = false;
 }
 
@@ -168,7 +170,7 @@ bool CSkirmishAIHandler::AddSkirmishAI(const SkirmishAIData& data, const size_t 
 }
 
 bool CSkirmishAIHandler::RemoveSkirmishAI(const size_t skirmishAIId) {
-	if (!IsActiveSkirmishAI(skirmishAIId))
+	if (!IsValidSkirmishAI(aiInstanceData[skirmishAIId]))
 		return false;
 
 	localTeamAIs[ aiInstanceData[skirmishAIId].team ] = {};
@@ -222,13 +224,13 @@ const SkirmishAIData* CSkirmishAIHandler::GetLocalSkirmishAIInCreation(const int
 void CSkirmishAIHandler::SetLocalKillFlag(const size_t skirmishAIId, const int reason) {
 	const SkirmishAIData& aiData = aiInstanceData[skirmishAIId];
 
-	assert(IsActiveSkirmishAI(skirmishAIId)); // is valid id?
+	assert(IsValidSkirmishAI(aiData)); // is valid id?
 	assert(IsLocalSkirmishAI(aiData)); // is local AI?
 
 	aiKillFlags[skirmishAIId] = reason;
 
 	if (!aiData.isLuaAI)
-		eoh->SetSkirmishAIDieing(skirmishAIId);
+		eoh->BlockSkirmishAIEvents(skirmishAIId);
 
 	clientNet->Send(CBaseNetProtocol::Get().SendAIStateChanged(gu->myPlayerNum, skirmishAIId, SKIRMAISTATE_DIEING));
 }
@@ -292,17 +294,17 @@ void CSkirmishAIHandler::CompleteWithDefaultOptionValues(const size_t skirmishAI
 	if (!IsValidSkirmishAI(aiData))
 		return;
 
-	for (auto oi = options.cbegin(); oi != options.cend(); ++oi) {
-		if (oi->typeCode == opt_error)
+	for (const auto& option: options) {
+		if (option.typeCode == opt_error)
 			continue;
-		if (oi->typeCode == opt_section)
-			continue;
-
-		if (aiData.options.find(oi->key) != aiData.options.end())
+		if (option.typeCode == opt_section)
 			continue;
 
-		aiData.optionKeys.push_back(oi->key);
-		aiData.options[oi->key] = option_getDefString(*oi);
+		if (aiData.options.find(option.key) != aiData.options.end())
+			continue;
+
+		aiData.optionKeys.push_back(option.key);
+		aiData.options[option.key] = option_getDefString(option);
 	}
 }
 

@@ -4,7 +4,7 @@
 
 #include "ThreadPool.h"
 #include "System/Exceptions.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #if (!defined(UNITSYNC) && !defined(UNIT_TEST))
 	#include "System/OffscreenGLContext.h"
 #endif
@@ -141,7 +141,7 @@ bool HasThreads() { return !workerThreads[false].empty(); }
 static bool DoTask(int tid, bool async)
 {
 	#ifndef UNIT_TEST
-	SCOPED_MT_TIMER("::ThreadWorkers (accumulated)");
+	SCOPED_MT_TIMER("ThreadPool::RunTask");
 	#endif
 
 	ITaskGroup* tg = nullptr;
@@ -251,7 +251,7 @@ void WaitForFinished(std::shared_ptr<ITaskGroup>&& taskGroup)
 
 	{
 		#ifndef UNIT_TEST
-		SCOPED_MT_TIMER("::ThreadWorkers (accumulated)");
+		SCOPED_MT_TIMER("ThreadPool::WaitFor");
 		#endif
 
 		assert(!taskGroup->IsAsyncTask());
@@ -500,11 +500,29 @@ void SetThreadCount(int wantedNumThreads)
 		#endif
 	}
 
+
+	#if (!defined(UNITSYNC) && !defined(UNIT_TEST))
+	if (wantedNumThreads != 0) {
+		CTimeProfiler::RegisterTimer("ThreadPool::AddTask");
+		CTimeProfiler::RegisterTimer("ThreadPool::RunTask");
+		CTimeProfiler::RegisterTimer("ThreadPool::WaitFor");
+	}
+	#endif
+
 	if (curNumThreads < wtdNumThreads) {
 		SpawnThreads(wtdNumThreads, curNumThreads);
 	} else {
 		KillThreads(wtdNumThreads, curNumThreads);
 	}
+
+	#if (!defined(UNITSYNC) && !defined(UNIT_TEST))
+	if (wantedNumThreads == 0) {
+		CTimeProfiler::UnRegisterTimer("ThreadPool::AddTask");
+		CTimeProfiler::UnRegisterTimer("ThreadPool::RunTask");
+		CTimeProfiler::UnRegisterTimer("ThreadPool::WaitFor");
+	}
+	#endif
+
 
 	#ifdef USE_TASK_STATS_TRACKING
 	if (workerThreads[false].empty()) {

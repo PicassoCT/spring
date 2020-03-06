@@ -146,11 +146,13 @@ public:
 	void Clear();
 	void Reload();
 
-	std::string ArchiveFromName(const std::string& s) const;
-	std::string NameFromArchive(const std::string& s) const;
-	std::string GetArchivePath(const std::string& name) const;
-	std::string MapNameToMapFile(const std::string& name) const;
-	ArchiveData GetArchiveData(const std::string& name) const;
+	std::string ArchiveFromName(const std::string& versionedName) const;
+	std::string NameFromArchive(const std::string& archiveName) const;
+	std::string GameHumanNameFromArchive(const std::string& archiveName) const;
+	std::string  MapHumanNameFromArchive(const std::string& archiveName) const;
+	std::string GetArchivePath(const std::string& archiveName) const;
+	std::string MapNameToMapFile(const std::string& versionedMapName) const;
+	ArchiveData GetArchiveData(const std::string& versionedName) const;
 	ArchiveData GetArchiveDataByArchive(const std::string& archive) const;
 
 
@@ -160,12 +162,15 @@ private:
 			memset(checksum, 0, sizeof(checksum));
 		}
 
-		std::string path;         // FileSystem::GetDirectory(origName)
-		std::string origName;     // non-lowercased name
-		std::string replaced;     // if not empty, use this archive instead
+		std::string path;             // FileSystem::GetDirectory(origName)
+		std::string origName;         // non-lowercased name
+		std::string replaced;         // if not empty, use this archive instead
+		std::string archiveDataPath;  // path to {mod,map}info.lua for .sdd's
+
 		ArchiveData archiveData;
 
 		uint32_t modified = 0;
+		uint32_t modifiedArchiveData = 0;
 		uint8_t checksum[sha512::SHA_LEN];
 
 		bool updated = false;
@@ -208,7 +213,7 @@ private:
 	 */
 	bool GetArchiveChecksum(const std::string& filename, ArchiveInfo& archiveInfo);
 
-	bool CheckCachedData(const std::string& fullName, unsigned* modified, bool doChecksum);
+	bool CheckCachedData(const std::string& fullName, unsigned& modified, bool doChecksum);
 
 	/**
 	 * Returns a value > 0 if the file is rated as a meta-file.
@@ -241,6 +246,7 @@ private:
 	std::string cachefile;
 
 	bool isDirty = false;
+	bool isInScan = false;
 };
 
 extern CArchiveScanner* archiveScanner;

@@ -1,6 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "LegacyMeshDrawer.h"
+#if 0
 #include "Game/Camera.h"
 #include "Game/CameraHandler.h"
 #include "Map/SMF/SMFReadMap.h"
@@ -11,17 +12,19 @@
 #include "Rendering/GL/VertexArray.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/FastMath.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/StringUtil.h"
 
 #define CLAMP(i) Clamp((i), 0, smfReadMap->maxHeightMapIdx)
 
+static inline float GetVisibleVertexHeight(int idx) {
+	return readMap->GetCornerHeightMapUnsynced()[idx];
+}
+
+
 CLegacyMeshDrawer::CLegacyMeshDrawer(CSMFReadMap* rm, CSMFGroundDrawer* gd)
 	: smfReadMap(rm)
 	, smfGroundDrawer(gd)
-	, viewRadius(4)
-	, neededLod(4)
-	//, waterDrawn(false)
 {
 }
 
@@ -916,3 +919,13 @@ void CLegacyMeshDrawer::DrawShadowMesh()
 		}
 	}
 }
+
+#else
+
+CLegacyMeshDrawer::CLegacyMeshDrawer(CSMFReadMap* rm, CSMFGroundDrawer* gd): smfReadMap(rm), smfGroundDrawer(gd) {}
+
+void CLegacyMeshDrawer::DrawMesh(const DrawPass::e& drawPass) {}
+void CLegacyMeshDrawer::DrawShadowMesh() {}
+
+#endif
+

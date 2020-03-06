@@ -51,7 +51,6 @@ make_global_var(sources_engine_System_common
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/SHA512.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/SyncChecker.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/SyncDebugger.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/SyncTracer.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/SyncedFloat3.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/backtrace.c"
 		"${CMAKE_CURRENT_SOURCE_DIR}/Sync/get_executable_name.c"
@@ -65,7 +64,7 @@ make_global_var(sources_engine_System_common
 		"${CMAKE_CURRENT_SOURCE_DIR}/type2.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/float3.cpp"
 		"${CMAKE_CURRENT_SOURCE_DIR}/float4.cpp"
-		"${CMAKE_CURRENT_SOURCE_DIR}/myMath.cpp"
+		"${CMAKE_CURRENT_SOURCE_DIR}/SpringMath.cpp"
 	)
 if    (NO_CREG)
 	make_global_var(sources_engine_System_creg )

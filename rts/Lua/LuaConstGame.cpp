@@ -37,11 +37,12 @@ bool LuaConstGame::PushEntries(lua_State* L)
 	}
 
 	if (unitHandler.MaxUnits() > 0) {
-		// simulation; values are meaningless prior to LoadGame
+		// simulation; values are meaningless prior to Game::Load
 		LuaPushNamedNumber(L, "maxUnits", unitHandler.MaxUnits());
 
-		LuaPushNamedNumber(L, "windMin" , wind.GetMinWind());
-		LuaPushNamedNumber(L, "windMax" , wind.GetMaxWind());
+		// NB: not constants
+		LuaPushNamedNumber(L, "windMin" , envResHandler.GetMinWindStrength());
+		LuaPushNamedNumber(L, "windMax" , envResHandler.GetMaxWindStrength());
 
 		// map-damage; enabled iff !mapInfo->map.notDeformable
 		LuaPushNamedBool(L, "mapDamage", !mapDamage->Disabled());
@@ -62,13 +63,13 @@ bool LuaConstGame::PushEntries(lua_State* L)
 		LuaPushNamedString(L, "mapDescription" ,  mapInfo->map.description);
 		LuaPushNamedNumber(L, "mapHardness"    ,  mapInfo->map.hardness);
 		LuaPushNamedNumber(L, "extractorRadius",  mapInfo->map.extractorRadius);
-		LuaPushNamedNumber(L, "tidal"          ,  mapInfo->map.tidalStrength);
+		LuaPushNamedNumber(L, "tidal"          ,  mapInfo->map.tidalStrength); // NB: not constant
 		LuaPushNamedNumber(L, "waterDamage"    ,  mapInfo->water.damage);
 		LuaPushNamedNumber(L, "gravity"        , -mapInfo->map.gravity * GAME_SPEED * GAME_SPEED);
 	}
 
 	if (!modInfo.filename.empty()) {
-		// mod-info; values are meaningless prior to LoadGame
+		// mod-info; values are meaningless prior to Game::Load
 		LuaPushNamedString(L, "gameName"     , modInfo.humanName);
 		LuaPushNamedString(L, "gameShortName", modInfo.shortName);
 		LuaPushNamedString(L, "gameVersion"  , modInfo.version);
@@ -175,12 +176,13 @@ bool LuaConstGame::PushEntries(lua_State* L)
 	{
 		// weapon avoidance and projectile collision flags
 		lua_pushliteral(L, "collisionFlags");
-		lua_createtable(L, 0, 8);
+		lua_createtable(L, 0, 9);
 			LuaPushNamedNumber(L, "noEnemies"   , Collision::NOENEMIES   );
 			LuaPushNamedNumber(L, "noFriendlies", Collision::NOFRIENDLIES);
 			LuaPushNamedNumber(L, "noFeatures"  , Collision::NOFEATURES  );
 			LuaPushNamedNumber(L, "noNeutrals"  , Collision::NONEUTRALS  );
-			LuaPushNamedNumber(L, "noFirebases" , Collision::NOFIREBASES );
+			LuaPushNamedNumber(L, "noFireBases" , Collision::NOFIREBASES );
+			LuaPushNamedNumber(L, "noNonTargets", Collision::NONONTARGETS);
 			LuaPushNamedNumber(L, "noGround"    , Collision::NOGROUND    );
 			LuaPushNamedNumber(L, "noCloaked"   , Collision::NOCLOAKED   );
 			LuaPushNamedNumber(L, "noUnits"     , Collision::NOUNITS     );

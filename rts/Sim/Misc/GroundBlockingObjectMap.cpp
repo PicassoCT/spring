@@ -6,27 +6,30 @@
 #include "GlobalConstants.h"
 #include "Map/ReadMap.h"
 #include "Sim/Path/IPathManager.h"
+#include "System/ContainerUtil.h"
 #include "System/Sync/HsiehHash.h"
 
 CGroundBlockingObjectMap groundBlockingObjectMap;
 
-CR_BIND_TEMPLATE(BlockingMapCell, )
-CR_REG_METADATA_TEMPLATE(BlockingMapCell, (
+CR_BIND_TEMPLATE(CGroundBlockingObjectMap::ArrCell, )
+CR_REG_METADATA_TEMPLATE(CGroundBlockingObjectMap::ArrCell, (
 	CR_MEMBER(arr),
-	CR_MEMBER(vec),
-	CR_MEMBER(arrSize)
+	CR_MEMBER(numObjs),
+	CR_MEMBER(vecIndx)
 ))
 
 CR_BIND(CGroundBlockingObjectMap, )
 CR_REG_METADATA(CGroundBlockingObjectMap, (
-	CR_MEMBER(groundBlockingMap)
+	CR_MEMBER(arrCells),
+	CR_MEMBER(vecCells),
+	CR_MEMBER(vecIndcs)
 ))
 
 
 
 void CGroundBlockingObjectMap::AddGroundBlockingObject(CSolidObject* object)
 {
-	if (object->blockMap != nullptr) {
+	if (object->GetBlockMap() != nullptr) {
 		// if object has a yardmap, add it to map selectively
 		// (checking the specific state of each yardmap cell)
 		AddGroundBlockingObject(object, YARDMAP_BLOCKED);
@@ -43,12 +46,12 @@ void CGroundBlockingObjectMap::AddGroundBlockingObject(CSolidObject* object)
 
 	for (int zSqr = zminSqr; zSqr < zmaxSqr; zSqr++) {
 		for (int xSqr = xminSqr; xSqr < xmaxSqr; xSqr++) {
-			groundBlockingMap[xSqr + zSqr * mapDims.mapx].insert_unique(object);
+			CellInsertUnique(zSqr * mapDims.mapx + xSqr, object);
 		}
 	}
 
 	// FIXME: needs dependency injection (observer pattern?)
-	if (object->moveDef != nullptr || pathManager == nullptr)
+	if (object->moveDef != nullptr)
 		return;
 
 	pathManager->TerrainChange(xminSqr, zminSqr, xmaxSqr, zmaxSqr, TERRAINCHANGE_OBJECT_INSERTED);
@@ -68,16 +71,15 @@ void CGroundBlockingObjectMap::AddGroundBlockingObject(CSolidObject* object, con
 		for (int x = xminSqr; x < xmaxSqr; x++) {
 			// unit yardmaps always contain sx=UnitDef::xsize * sz=UnitDef::zsize
 			// cells (the unit->moveDef footprint can have different dimensions)
-
 			if ((object->GetGroundBlockingMaskAtPos({x * SQUARE_SIZE * 1.0f, 0.0f, z * SQUARE_SIZE * 1.0f}) & mask) == 0)
 				continue;
 
-			groundBlockingMap[x + z * mapDims.mapx].insert_unique(object);
+			CellInsertUnique(z * mapDims.mapx + x, object);
 		}
 	}
 
 	// FIXME: needs dependency injection (observer pattern?)
-	if (object->moveDef != nullptr || pathManager == nullptr)
+	if (object->moveDef != nullptr)
 		return;
 
 	pathManager->TerrainChange(xminSqr, zminSqr, xmaxSqr, zmaxSqr, TERRAINCHANGE_OBJECT_INSERTED_YM);
@@ -95,12 +97,12 @@ void CGroundBlockingObjectMap::RemoveGroundBlockingObject(CSolidObject* object)
 
 	for (int z = bz; z < bz + sz; ++z) {
 		for (int x = bx; x < bx + sx; ++x) {
-			groundBlockingMap[z * mapDims.mapx + x].erase(object);
+			CellErase(z * mapDims.mapx + x, object);
 		}
 	}
 
 	// FIXME: needs dependency injection (observer pattern?)
-	if (object->moveDef != nullptr || pathManager == nullptr)
+	if (object->moveDef != nullptr)
 		return;
 
 	pathManager->TerrainChange(bx, bz, bx + sx, bz + sz, TERRAINCHANGE_OBJECT_DELETED);
@@ -147,11 +149,18 @@ bool CGroundBlockingObjectMap::GroundBlocked(int x, int z, const CSolidObject* i
 
 bool CGroundBlockingObjectMap::GroundBlocked(const float3& pos, const CSolidObject* ignoreObj) const
 {
-	const int xSqr = unsigned(pos.x) / SQUARE_SIZE;
-	const int zSqr = unsigned(pos.z) / SQUARE_SIZE;
+	const int xSqr = static_cast<unsigned>(pos.x / SQUARE_SIZE);
+	const int zSqr = static_cast<unsigned>(pos.z / SQUARE_SIZE);
 	return (GroundBlocked(xSqr, zSqr, ignoreObj));
 }
 
+
+CGroundBlockingObjectMap::BlockingMapCell CGroundBlockingObjectMap::GetCellUnsafeConst(const float3& pos) const
+{
+	const int xSqr = static_cast<unsigned>(pos.x / SQUARE_SIZE);
+	const int zSqr = static_cast<unsigned>(pos.z / SQUARE_SIZE);
+	return (GetCellUnsafeConst(zSqr * mapDims.mapx + xSqr));
+}
 
 
 /**
@@ -183,10 +192,13 @@ void CGroundBlockingObjectMap::CloseBlockingYard(CSolidObject* object)
 }
 
 
-inline bool CGroundBlockingObjectMap::CheckYard(CSolidObject* yardUnit, const YardMapStatus& mask) const
+bool CGroundBlockingObjectMap::CheckYard(const CSolidObject* yardUnit, const YardMapStatus& mask) const
 {
-	for (int z = yardUnit->mapPos.y; z < yardUnit->mapPos.y + yardUnit->zsize; ++z) {
-		for (int x = yardUnit->mapPos.x; x < yardUnit->mapPos.x + yardUnit->xsize; ++x) {
+	const int2 mins = yardUnit->mapPos;
+	const int2 maxs = mins + int2(yardUnit->xsize, yardUnit->zsize);
+
+	for (int z = mins.y; z < maxs.y; ++z) {
+		for (int x = mins.x; x < maxs.x; ++x) {
 			if ((yardUnit->GetGroundBlockingMaskAtPos(float3(x * SQUARE_SIZE, 0.0f, z * SQUARE_SIZE)) & mask) == 0)
 				continue;
 
@@ -199,28 +211,79 @@ inline bool CGroundBlockingObjectMap::CheckYard(CSolidObject* yardUnit, const Ya
 }
 
 
-bool CGroundBlockingObjectMap::CanOpenYard(CSolidObject* yardUnit) const
-{
-	return CheckYard(yardUnit, YARDMAP_YARDINV);
-}
-
-
-bool CGroundBlockingObjectMap::CanCloseYard(CSolidObject* yardUnit) const
-{
-	return CheckYard(yardUnit, YARDMAP_YARD);
-}
-
-
 unsigned int CGroundBlockingObjectMap::CalcChecksum() const
 {
 	unsigned int checksum = 666;
 
-	for (unsigned int i = 0; i < groundBlockingMap.size(); ++i) {
-		if (!groundBlockingMap[i].empty()) {
+	for (unsigned int i = 0; i < arrCells.size(); ++i) {
+		if (!arrCells[i].Empty())
 			checksum = HsiehHash(&i, sizeof(i), checksum);
-		}
 	}
 
 	return checksum;
+}
+
+
+
+bool CGroundBlockingObjectMap::CellInsertUnique(unsigned int sqr, CSolidObject* o) {
+	ArrCell& ac = GetArrCell(sqr);
+	VecCell* vc = nullptr;
+
+	if (ac.Contains(o))
+		return false;
+	if (ac.Insert(o))
+		return true;
+
+	// array-cell is full, spill over
+	if ((vc = &GetVecCell(sqr)) == &vecCells[0]) {
+		if (vecIndcs.empty()) {
+			assert(vecCells.size() > 0);
+			ac.SetVecIndx(vecCells.size());
+			vc = &spring::VectorEmplaceBack(vecCells);
+		} else {
+			ac.SetVecIndx(spring::VectorBackPop(vecIndcs));
+			vc = &vecCells[ac.GetVecIndx()];
+		}
+	}
+
+	return (spring::VectorInsertUnique(*vc, o, true));
+}
+
+bool CGroundBlockingObjectMap::CellErase(unsigned int sqr, CSolidObject* o) {
+	ArrCell& ac = GetArrCell(sqr);
+	VecCell* vc = nullptr;
+
+	if (ac.Erase(o)) {
+		if (ac.GetVecIndx() == 0)
+			return true;
+
+		// never allow a hole between array and vector parts
+		assert(!vecCells[ac.GetVecIndx()].empty());
+		ac.Insert(spring::VectorBackPop(*(vc = &GetVecCell(sqr))));
+
+		goto CommonExit;
+	}
+
+	// failed to erase, but array-cell is not filled to capacity
+	// this means vc must be empty and can not contain the object
+	if (!ac.Full())
+		return false;
+
+	// otherwise object must be in vc if(f) this cell contains it
+	// note that vc can still point to the dummy element if ac is
+	// full but never overflowed, which is fine since VectorErase
+	// will simply return false
+	if (!spring::VectorErase(*(vc = &GetVecCell(sqr)), o))
+		return false;
+
+CommonExit:
+
+	if (vc->empty()) {
+		assert(ac.GetVecIndx() != 0);
+		vecIndcs.push_back(ac.GetVecIndx());
+		ac.SetVecIndx(0);
+	}
+
+	return true;
 }
 

@@ -14,10 +14,9 @@
 #include "Rendering/Env/Particles/Classes/SmokeTrailProjectile.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Weapons/WeaponDef.h"
-#include "System/Sync/SyncTracer.h"
 #include "System/Color.h"
 #include "System/Matrix44f.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 
 
 // the smokes life-time in frames
@@ -92,11 +91,6 @@ CStarburstProjectile::CStarburstProjectile(const ProjectileParams& params): CWea
 
 	castShadow = true;
 	leaveSmokeTrail = (weaponDef != nullptr && weaponDef->visuals.smokeTrail);
-
-#ifdef TRACE_SYNC
-	tracefile << "[" << __func__ << "] ";
-	tracefile << pos.x << " " << pos.y << " " << pos.z << " " << speed.x << " " << speed.y << " " << speed.z << "\n";
-#endif
 
 	InitTracerParts();
 }
@@ -346,20 +340,27 @@ void CStarburstProjectile::Draw(GL::RenderDataBufferTC* va) const
 			va->SafeAppend({interPos - camera->GetRight() * drawsize - camera->GetUp() * drawsize, wt3->xstart, wt3->ystart, col});
 			va->SafeAppend({interPos + camera->GetRight() * drawsize - camera->GetUp() * drawsize, wt3->xend,   wt3->ystart, col});
 			va->SafeAppend({interPos + camera->GetRight() * drawsize + camera->GetUp() * drawsize, wt3->xend,   wt3->yend,   col});
+
+			va->SafeAppend({interPos + camera->GetRight() * drawsize + camera->GetUp() * drawsize, wt3->xend,   wt3->yend,   col});
 			va->SafeAppend({interPos - camera->GetRight() * drawsize + camera->GetUp() * drawsize, wt3->xstart, wt3->yend,   col});
+			va->SafeAppend({interPos - camera->GetRight() * drawsize - camera->GetUp() * drawsize, wt3->xstart, wt3->ystart, col});
 		}
 
 		// unsigned, so LHS will wrap around to UINT_MAX
 		partNum = std::min(partNum - 1, NUM_TRACER_PARTS - 1);
 	}
+	{
+		// draw the engine flare
+		constexpr float fsize = 25.0f;
 
-	// draw the engine flare
-	constexpr float fsize = 25.0f;
+		va->SafeAppend({drawPos - camera->GetRight() * fsize - camera->GetUp() * fsize, wt1->xstart, wt1->ystart, lightRed});
+		va->SafeAppend({drawPos + camera->GetRight() * fsize - camera->GetUp() * fsize, wt1->xend,   wt1->ystart, lightRed});
+		va->SafeAppend({drawPos + camera->GetRight() * fsize + camera->GetUp() * fsize, wt1->xend,   wt1->yend,   lightRed});
 
-	va->SafeAppend({drawPos - camera->GetRight() * fsize - camera->GetUp() * fsize, wt1->xstart, wt1->ystart, lightRed});
-	va->SafeAppend({drawPos + camera->GetRight() * fsize - camera->GetUp() * fsize, wt1->xend,   wt1->ystart, lightRed});
-	va->SafeAppend({drawPos + camera->GetRight() * fsize + camera->GetUp() * fsize, wt1->xend,   wt1->yend,   lightRed});
-	va->SafeAppend({drawPos - camera->GetRight() * fsize + camera->GetUp() * fsize, wt1->xstart, wt1->yend,   lightRed});
+		va->SafeAppend({drawPos + camera->GetRight() * fsize + camera->GetUp() * fsize, wt1->xend,   wt1->yend,   lightRed});
+		va->SafeAppend({drawPos - camera->GetRight() * fsize + camera->GetUp() * fsize, wt1->xstart, wt1->yend,   lightRed});
+		va->SafeAppend({drawPos - camera->GetRight() * fsize - camera->GetUp() * fsize, wt1->xstart, wt1->ystart, lightRed});
+	}
 }
 
 int CStarburstProjectile::ShieldRepulse(const float3& shieldPos, float shieldForce, float shieldMaxSpeed)

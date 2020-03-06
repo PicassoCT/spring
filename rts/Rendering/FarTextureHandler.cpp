@@ -9,7 +9,7 @@
 #include "Rendering/GL/RenderDataBuffer.hpp"
 #include "Rendering/Models/3DModel.h"
 #include "Sim/Objects/SolidObject.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Log/ILog.h"
 
 #define LOG_SECTION_FAR_TEXTURE_HANDLER "FarTextureHandler"
@@ -59,7 +59,7 @@ CFarTextureHandler::CFarTextureHandler()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texSize.x, texSize.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texSize.x, texSize.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
 	fbo.Bind();
 	fbo.AttachTexture(farTextureID);
@@ -90,7 +90,7 @@ int2 CFarTextureHandler::GetTextureCoordsInt(const int farTextureNum, const int 
 
 	const int row = texnum       / (texSize.x / iconSize.x);
 	const int col = texnum - row * (texSize.x / iconSize.x);
-	return int2(col, row);
+	return {col, row};
 }
 
 /**
@@ -143,7 +143,7 @@ void CFarTextureHandler::CreateFarTexture(const CSolidObject* obj)
 	fbo.CreateRenderBuffer(GL_DEPTH_ATTACHMENT, GL_DEPTH_COMPONENT16, texSize.x, texSize.y);
 	fbo.CheckStatus("FARTEXTURE");
 
-	glAttribStatePtr->PushBits(GL_ALL_ATTRIB_BITS);
+	glAttribStatePtr->PushBits(GL_POLYGON_BIT | GL_ENABLE_BIT);
 	glAttribStatePtr->DisableBlendMask();
 	glAttribStatePtr->FrontFace(GL_CW);
 
@@ -175,8 +175,8 @@ void CFarTextureHandler::CreateFarTexture(const CSolidObject* obj)
 	Shader::IProgramObject* shader = state->GetActiveShader();
 
 	// overwrite the matrices set by SetupOpaqueDrawing
-	shader->SetUniformMatrix4fv(8, false, iconCam.GetViewMatrix());
-	shader->SetUniformMatrix4fv(9, false, iconCam.GetProjectionMatrix());
+	shader->SetUniformMatrix4fv(7, false, iconCam.GetViewMatrix());
+	shader->SetUniformMatrix4fv(8, false, iconCam.GetProjectionMatrix());
 
 
 	for (int orient = 0; orient < NUM_ICON_ORIENTATIONS; ++orient) {
@@ -237,10 +237,13 @@ void CFarTextureHandler::DrawFarTexture(const CSolidObject* obj, GL::RenderDataB
 	const float3 rgv = camera->GetRight() * icon.texScales.x;
 	const float3 cnv = ((camera->GetDir() * XZVector) - (UpVector * 0.1f)).ANormalize();
 
-	rdb->SafeAppend({pos - upv + rgv, objTexCoors.x,                 objTexCoors.y                , cnv});
-	rdb->SafeAppend({pos + upv + rgv, objTexCoors.x,                 objTexCoors.y + objIconSize.y, cnv});
-	rdb->SafeAppend({pos + upv - rgv, objTexCoors.x + objIconSize.x, objTexCoors.y + objIconSize.y, cnv});
-	rdb->SafeAppend({pos - upv - rgv, objTexCoors.x + objIconSize.x, objTexCoors.y                , cnv});
+	rdb->SafeAppend({pos - upv + rgv, objTexCoors.x,                 objTexCoors.y                , cnv}); // br
+	rdb->SafeAppend({pos + upv + rgv, objTexCoors.x,                 objTexCoors.y + objIconSize.y, cnv}); // tr
+	rdb->SafeAppend({pos + upv - rgv, objTexCoors.x + objIconSize.x, objTexCoors.y + objIconSize.y, cnv}); // tl
+
+	rdb->SafeAppend({pos + upv - rgv, objTexCoors.x + objIconSize.x, objTexCoors.y + objIconSize.y, cnv}); // tl
+	rdb->SafeAppend({pos - upv - rgv, objTexCoors.x + objIconSize.x, objTexCoors.y                , cnv}); // bl
+	rdb->SafeAppend({pos - upv + rgv, objTexCoors.x,                 objTexCoors.y                , cnv}); // br
 }
 
 
@@ -271,8 +274,6 @@ void CFarTextureHandler::Draw()
 
 	// render currently queued far-icons
 	if (!renderQueue.empty()) {
-		glAttribStatePtr->EnableAlphaTest();
-		glAttribStatePtr->AlphaFunc(GL_GREATER, 0.5f);
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, farTextureID);
 
@@ -281,17 +282,17 @@ void CFarTextureHandler::Draw()
 		Shader::IProgramObject* shader = buffer->GetShader();
 
 		shader->Enable();
-		shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix());
-		shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
+		shader->SetUniformMatrix4x4<float>("u_movi_mat", false, camera->GetViewMatrix());
+		shader->SetUniformMatrix4x4<float>("u_proj_mat", false, camera->GetProjectionMatrix());
+		shader->SetUniform("u_alpha_test_ctrl", 0.5f, 1.0f, 0.0f, 0.0f); // test > 0.5
 
 		for (const CSolidObject* obj: renderQueue) {
 			DrawFarTexture(obj, buffer);
 		}
 
-		buffer->Submit(GL_QUADS);
+		buffer->Submit(GL_TRIANGLES);
+		shader->SetUniform("u_alpha_test_ctrl", 0.0f, 0.0f, 0.0f, 1.0f); // no test
 		shader->Disable();
-
-		glAttribStatePtr->DisableAlphaTest();
 	}
 
 	renderQueue.clear();

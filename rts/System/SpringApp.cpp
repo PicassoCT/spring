@@ -61,7 +61,7 @@
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 #include "System/GlobalConfig.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/MsgStrings.h"
 #include "System/SafeUtil.h"
 #include "System/SplashScreen.hpp"
@@ -79,6 +79,7 @@
 #include "System/FileSystem/FileSystemInitializer.h"
 #include "System/Input/KeyInput.h"
 #include "System/Input/MouseInput.h"
+#include "System/LoadSave/LoadSaveHandler.h"
 #include "System/Log/ConsoleSink.h"
 #include "System/Log/ILog.h"
 #include "System/Log/DefaultFilter.h"
@@ -96,11 +97,9 @@
 
 
 CONFIG(unsigned, SetCoreAffinity).defaultValue(0).safemodeValue(1).description("Defines a bitmask indicating which CPU cores the main-thread should use.");
-CONFIG(unsigned, SetCoreAffinitySim).defaultValue(0).safemodeValue(1).description("Defines a bitmask indicating which CPU cores the sim-thread should use.");
-CONFIG(unsigned, TextureMemPoolSize).defaultValue(64 * 2).minimumValue(1);
+CONFIG(unsigned, TextureMemPoolSize).defaultValue(128 * (1 + (__archBits__ == 64))).minimumValue(1);
 CONFIG(bool, UseLuaMemPools).defaultValue(__archBits__ == 64).description("Whether Lua VM memory allocations are made from pools.");
 CONFIG(bool, UseHighResTimer).defaultValue(false).description("On Windows, sets whether Spring will use low- or high-resolution timer functions for tasks like graphical interpolation between game frames.");
-CONFIG(int, PathingThreadCount).defaultValue(0).safemodeValue(1).minimumValue(0);
 
 CONFIG(std::string, name).defaultValue(UnnamedPlayerName).description("Sets your name in the game. Since this is overridden by lobbies with your lobby username when playing, it usually only comes up when viewing replays or starting the engine directly for testing purposes.");
 CONFIG(std::string, DefaultStartScript).defaultValue("").description("filename of script.txt to use when no command line parameters are specified.");
@@ -167,11 +166,9 @@ static void ConsolePrintInitialize(const std::string& configSource, bool safemod
  */
 SpringApp::SpringApp(int argc, char** argv)
 {
-	// {--,/}help overrides all other flags and causes exit(),
-	// even in the unusual event it is not given as first arg
-	if (argc > 1 && strstr(argv[1], "help") != nullptr)
-		ConsolePrintInitialize("", false);
-
+	// NB
+	//   {--,/}help overrides all other flags and causes exit(),
+	//   even in the unusual event it is not given as first arg
 	gflags::SetUsageMessage("Usage: " + std::string(argv[0]) + " [options] [path_to_script.txt or demo.sdfz]");
 	gflags::SetVersionString(SpringVersion::GetFull());
 	gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -211,7 +208,7 @@ SpringApp::~SpringApp()
  */
 bool SpringApp::Init()
 {
-	CMyMath::Init();
+	SpringMath::Init();
 	LuaMemPool::InitStatic(configHandler->GetBool("UseLuaMemPools"));
 
 	CGlobalRendering::InitStatic();
@@ -302,7 +299,7 @@ bool SpringApp::InitPlatformLibs()
 #if defined(WIN32) && defined(__GNUC__)
 	// load QTCreator's gdb helper dll; a variant of this should also work on other OSes
 	{
-		// surpress dialog box if gdb helpers aren't found
+		// suppress dialog box if gdb helpers aren't found
 		const UINT oldErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS);
 
 		if (LoadLibrary("gdbmacros.dll"))
@@ -323,7 +320,6 @@ bool SpringApp::InitFileSystem()
 	// (employ all available threads, then switch to default)
 	ThreadPool::SetMaximumThreadCount();
 
-	#ifndef HEADLESS
 	// threaded initialization s.t. the window gets CPU time
 	// FileSystem is mostly self-contained, don't need locks
 	// (at this point neither the platform CWD nor data-dirs
@@ -334,6 +330,7 @@ bool SpringApp::InitFileSystem()
 	std::vector<std::string> splashScreenFiles(dataDirsAccess.FindFiles(FileSystem::IsAbsolutePath(ssd)? ssd: cwd + ssd, "*.{png,jpg}", 0));
 	spring::thread fsInitThread(FileSystemInitializer::InitializeThr, &ret);
 
+	#ifndef HEADLESS
 	if (!splashScreenFiles.empty()) {
 		ShowSplashScreen(splashScreenFiles[ guRNG.NextInt(splashScreenFiles.size()) ], SpringVersion::GetFull(), [&]() { return (FileSystemInitializer::Initialized()); });
 	} else {
@@ -343,11 +340,9 @@ bool SpringApp::InitFileSystem()
 	// skip hangs while waiting for the popup to die and kill us
 	if (!ret)
 		Watchdog::DeregisterThread(WDT_MAIN);
+	#endif
 
 	fsInitThread.join();
-	#else
-	FileSystemInitializer::InitializeThr(&ret);
-	#endif
 
 	ThreadPool::SetDefaultThreadCount();
 	// see InputHandler::PushEvents
@@ -421,13 +416,13 @@ void SpringApp::ParseCmdLine(int argc, char* argv[])
 
 	if (FLAGS_gen_fontconfig) {
 		CFontTexture::GenFontConfig();
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 
 	if (FLAGS_sync_version) {
 		// Note, the missing "Spring " is intentionally to make it compatible with `spring-dedicated --sync-version`
 		std::cout << SpringVersion::GetSync() << std::endl;
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 
 	if (FLAGS_isolation)
@@ -446,21 +441,21 @@ void SpringApp::ParseCmdLine(int argc, char* argv[])
 	// Interface Documentations in JSON-Format
 	if (FLAGS_list_config_vars) {
 		ConfigVariable::OutputMetaDataMap();
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 	if (FLAGS_list_def_tags) {
 		DefType::OutputTagMap();
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 	if (FLAGS_list_ceg_classes)
-		exit(CCustomExplosionGenerator::OutputProjectileClassInfo() ? EXIT_SUCCESS : EXIT_FAILURE);
+		exit(CCustomExplosionGenerator::OutputProjectileClassInfo() ? spring::EXIT_CODE_SUCCESS : spring::EXIT_CODE_FAILURE);
 
 	// Runtime Tests
 	if (FLAGS_test_creg) {
 #ifdef USING_CREG
-		exit(creg::RuntimeTest() ? EXIT_SUCCESS : EXIT_FAILURE);
+		exit(creg::RuntimeTest() ? spring::EXIT_CODE_SUCCESS : spring::EXIT_CODE_FAILURE);
 #else
-		exit(EXIT_FAILURE); //Do not fail tests
+		exit(spring::EXIT_CODE_SUCCESS);
 #endif
 	}
 
@@ -468,12 +463,12 @@ void SpringApp::ParseCmdLine(int argc, char* argv[])
 	if (FLAGS_list_ai_interfaces) {
 		ConsolePrintInitialize(FLAGS_config, FLAGS_safemode);
 		AILibraryManager::OutputAIInterfacesInfo();
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 	else if (FLAGS_list_skirmish_ais) {
 		ConsolePrintInitialize(FLAGS_config, FLAGS_safemode);
 		AILibraryManager::OutputSkirmishAIInfo();
-		exit(EXIT_SUCCESS);
+		exit(spring::EXIT_CODE_SUCCESS);
 	}
 
 	CTextureAtlas::SetDebug(FLAGS_textureatlas);
@@ -487,31 +482,21 @@ void SpringApp::ParseCmdLine(int argc, char* argv[])
 
 CGameController* SpringApp::LoadSaveFile(const std::string& saveFile)
 {
-	const std::string& ext = FileSystem::GetExtension(saveFile);
-
-	if (ext != "ssf" && ext != "slsf")
-		throw content_error(std::string("Unknown save extension: ") + ext);
-
 	clientSetup->isHost = true;
 
 	pregame = new CPreGame(clientSetup);
-	pregame->LoadSavefile(saveFile, ext == "ssf");
+	pregame->LoadSaveFile(saveFile);
 	return pregame;
 }
 
 
 CGameController* SpringApp::LoadDemoFile(const std::string& demoFile)
 {
-	const std::string& ext = FileSystem::GetExtension(demoFile);
-
-	if (ext != "sdfz")
-		throw content_error(std::string("Unknown demo extension: ") + ext);
-
 	clientSetup->isHost = true;
 	clientSetup->myPlayerName += " (spec)";
 
 	pregame = new CPreGame(clientSetup);
-	pregame->LoadDemo(demoFile);
+	pregame->LoadDemoFile(demoFile);
 	return pregame;
 }
 
@@ -542,7 +527,7 @@ CGameController* SpringApp::RunScript(const std::string& buf)
 	pregame = new CPreGame(clientSetup);
 
 	if (clientSetup->isHost)
-		pregame->LoadSetupscript(buf);
+		pregame->LoadSetupScript(buf);
 
 	return pregame;
 }
@@ -663,11 +648,12 @@ void SpringApp::Reload(const std::string script)
 		gameServer->SetReloading(true);
 
 	if (clientNet != nullptr)
-		clientNet->SetDemoRecorder(nullptr);
+		clientNet->ResetDemoRecorder();
 
 	// Lua shutdown functions need to access 'game' but spring::SafeDelete sets it to NULL.
-	// ~CGame also calls this, which does not matter because handlers are gone by then
-	game->KillLua(false);
+	// ~CGame also calls this, which does not matter because Lua handlers are gone by then
+	if (game != nullptr)
+		game->KillLua(false);
 
 	LOG("[SpringApp::%s][3]", __func__);
 
@@ -718,7 +704,7 @@ void SpringApp::Reload(const std::string script)
 	CBitmap::InitPool(configHandler->GetInt("TextureMemPoolSize"));
 	CglFont::ReallocAtlases(false);
 	#else
-	CBitmap::InitPool(0);
+	CBitmap::InitPool(configHandler->GetInt("TextureMemPoolSize"));
 	#endif
 
 	LOG("[SpringApp::%s][8]", __func__);
@@ -750,7 +736,7 @@ void SpringApp::Reload(const std::string script)
 	// clean changed configs
 	configHandler->Update();
 
-	LOG("[SpringApp::%s][12] #script=%lu", __func__, (unsigned long) script.size());
+	LOG("[SpringApp::%s][12] #script=" _STPF_ "", __func__, script.size());
 
 	if (script.empty()) {
 		// if no script, drop back to menu
@@ -798,33 +784,44 @@ bool SpringApp::Update()
 int SpringApp::Run()
 {
 	// always lives at the same address
-	const Threading::Error* threadError = Threading::GetThreadError();
+	const Threading::Error* threadError = Threading::GetThreadErrorC();
 
 	// initialize crash reporting
 	CrashHandler::Install();
 
 	// note: exceptions thrown by other threads are *not* caught here
+	// ErrorMsgBox sets threadError if called from any non-main thread
 	try {
-		if ((gu->globalQuit |= !Init()))
-			spring::exitCode = spring::EXIT_CODE_FAILURE;
+		if ((gu->globalQuit = !Init() || gu->globalQuit))
+			spring::exitCode = spring::EXIT_CODE_NOINIT;
 
 		while (!gu->globalQuit) {
 			Watchdog::ClearTimer(WDT_MAIN);
 			input.PushEvents();
 
+			// move to clear global data if a save is queued
+			ILoadSaveHandler::CreateSave(std::move(globalSaveFileData));
+
 			if (gu->globalReload) {
 				// copy; reloadScript is cleared by ResetState
 				Reload(gameSetup->reloadScript);
 			} else {
-				gu->globalQuit |= (!Update());
+				gu->globalQuit = (!Update() || gu->globalQuit);
 			}
 		}
 	} CATCH_SPRING_ERRORS
 
 	// no exception from main, check if some other thread interrupted our regular loop
 	// in case one did, ErrorMessageBox will call ::Kill and forcibly exit the process
-	if (!threadError->Empty())
-		ErrorMessageBox("  [thread] " + threadError->message, threadError->caption, threadError->flags);
+	if (!threadError->Empty()) {
+		Threading::Error tempError;
+
+		strncat(tempError.caption,    threadError->caption, sizeof(tempError.caption) - 1);
+		strncat(tempError.message, "[thread::error::run] ", sizeof(tempError.message) - 1);
+		strncat(tempError.message,    threadError->message, sizeof(tempError.message) - 1);
+
+		ErrorMessageBox(tempError.message, tempError.caption, threadError->flags);
+	}
 
 	try {
 		Kill(true);
@@ -833,7 +830,7 @@ int SpringApp::Run()
 	// no exception from main, but a thread might have thrown *during* ::Kill
 	// do not attempt to call Kill a second time, just show the error message
 	if (!threadError->Empty())
-		LOG_L(L_ERROR, "  [thread] errorMsg=\"%s\" msgCaption=\"%s\"", threadError->message.c_str(), threadError->caption.c_str());
+		LOG_L(L_ERROR, "[SpringApp::%s] errorMsg=\"[thread::error::kill] %s\" msgCaption=\"%s\"", __func__, threadError->message, threadError->caption);
 
 	// cleanup signal handlers, etc
 	CrashHandler::Remove();
@@ -852,7 +849,7 @@ int SpringApp::PostKill(Threading::Error&& e)
 		return -1;
 
 	// checked by Run() after Init()
-	Threading::SetThreadError(std::move(e));
+	*(Threading::GetThreadErrorM()) = std::move(e);
 
 	// gu always exists, though thread might be too late to interrupt Run
 	return (gu->globalQuit = true);
@@ -889,7 +886,7 @@ void SpringApp::Kill(bool fromRun)
 	// write the demo before destroying game, such that it can not
 	// be affected by a crash in any of the Game::Kill* functions
 	if (clientNet != nullptr)
-		clientNet->SetDemoRecorder(nullptr);
+		clientNet->ResetDemoRecorder();
 
 	// see ::Reload
 	ISound::Shutdown(false);

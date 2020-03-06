@@ -3,8 +3,9 @@
 
 #include "LuaTextures.h"
 #include "Rendering/GlobalRendering.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/StringUtil.h"
+#include "System/Log/ILog.h"
 
 
 /******************************************************************************/
@@ -19,20 +20,37 @@ std::string LuaTextures::Create(const Texture& tex)
 	glGenTextures(1, &texID);
 	glBindTexture(tex.target, texID);
 
+	glClearErrors("LuaTex", __func__, globalRendering->glDebugErrors);
+
 	GLenum dataFormat = GL_RGBA;
 	GLenum dataType   = GL_UNSIGNED_BYTE;
-	if ((tex.format == GL_DEPTH_COMPONENT) ||
-	    (tex.format == GL_DEPTH_COMPONENT16) ||
-	    (tex.format == GL_DEPTH_COMPONENT24) ||
-	    (tex.format == GL_DEPTH_COMPONENT32)) {
-		dataFormat = GL_DEPTH_COMPONENT;
-		dataType = GL_FLOAT;
+
+	switch (tex.format) {
+		case GL_DEPTH_COMPONENT:
+		case GL_DEPTH_COMPONENT16:
+		case GL_DEPTH_COMPONENT24:
+		case GL_DEPTH_COMPONENT32:
+		case GL_DEPTH_COMPONENT32F: {
+			dataFormat = GL_DEPTH_COMPONENT;
+			dataType = GL_FLOAT;
+		} break;
+		default: {
+		} break;
 	}
 
-	glClearErrors("LuaTex", __func__, globalRendering->glDebugErrors);
-	glTexImage2D(tex.target, 0, tex.format,
-	             tex.xsize, tex.ysize, tex.border,
-	             dataFormat, dataType, nullptr);
+	switch (tex.target) {
+		case GL_TEXTURE_2D_MULTISAMPLE: {
+			assert(tex.samples > 1);
+			glTexImage2DMultisample(tex.target, tex.samples, tex.format, tex.xsize, tex.ysize, GL_TRUE);
+		} break;
+		case GL_TEXTURE_2D: {
+			glTexImage2D(tex.target, 0, tex.format, tex.xsize, tex.ysize, tex.border, dataFormat, dataType, nullptr);
+		} break;
+		default: {
+			LOG_L(L_ERROR, "[LuaTextures::%s] texture-target %d is not supported yet", __func__, tex.target);
+		} break;
+	}
+
 
 	if (glGetError() != GL_NO_ERROR) {
 		glDeleteTextures(1, &texID);
@@ -84,13 +102,13 @@ std::string LuaTextures::Create(const Texture& tex)
 
 	if (freeIndices.empty()) {
 		textureMap.insert(buf, textureVec.size());
-		textureVec.emplace_back(std::move(newTex));
+		textureVec.emplace_back(newTex);
 		return buf;
 	}
 
 	// recycle
 	textureMap[buf] = freeIndices.back();
-	textureVec[freeIndices.back()] = std::move(newTex);
+	textureVec[freeIndices.back()] = newTex;
 	freeIndices.pop_back();
 	return buf;
 }
@@ -150,8 +168,8 @@ bool LuaTextures::FreeFBO(const std::string& name)
 
 void LuaTextures::FreeAll()
 {
-	for (auto it = textureMap.begin(); it != textureMap.end(); ++it) {
-		const Texture& tex = textureVec[it->second];
+	for (const auto& item: textureMap) {
+		const Texture& tex = textureVec[item.second];
 		glDeleteTextures(1, &tex.id);
 
 		glDeleteFramebuffers(1, &tex.fbo);

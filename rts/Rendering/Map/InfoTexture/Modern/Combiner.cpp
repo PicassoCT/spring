@@ -43,7 +43,7 @@ CInfoTextureCombiner::CInfoTextureCombiner()
 	// Also GL3.x enforces that GL_RGB10_A2 must be renderable.
 	glSpringTexStorage2D(GL_TEXTURE_2D, -1, GL_RGB10_A2, texSize.x, texSize.y);
 
-	if (FBO::IsSupported()) {
+	{
 		fbo.Bind();
 		fbo.AttachTexture(texture);
 		/*bool status =*/ fbo.CheckStatus("CInfoTextureCombiner");
@@ -68,27 +68,20 @@ CInfoTextureCombiner::CInfoTextureCombiner()
 void CInfoTextureCombiner::SwitchMode(const std::string& name)
 {
 	if (name.empty()) {
-		curMode = name;
 		disabled = true;
-		CreateShader("", true);
+
+		CreateShader(curMode = "", true);
 		return;
 	}
 
 	// WTF? fully reloaded from disk on every switch?
-	if (name == "los") {
-		disabled = !CreateShader("shaders/GLSL/infoLOS.lua", true, float4(0.5f, 0.5f, 0.5f, 1.0f));
-	} else
-	if (name == "metal") {
-		disabled = !CreateShader("shaders/GLSL/infoMetal.lua", true, float4(0.f, 0.f, 0.f, 1.0f));
-	} else
-	if (name == "height") {
-		disabled = !CreateShader("shaders/GLSL/infoHeight.lua");
-	} else
-	if (name == "path") {
-		disabled = !CreateShader("shaders/GLSL/infoPath.lua");
-	} else {
-		//FIXME allow "info:myluainfotex"
-		disabled = !CreateShader(name);
+	// TODO: allow "info:myluainfotex"
+	switch (hashString(name.c_str())) {
+		case hashString("los"   ): { disabled = !CreateShader("shaders/GLSL/infoLOS.lua"   , true, float4(0.5f, 0.5f, 0.5f, 1.0f)); } break;
+		case hashString("metal" ): { disabled = !CreateShader("shaders/GLSL/infoMetal.lua" , true, float4(0.0f, 0.0f, 0.0f, 1.0f)); } break;
+		case hashString("height"): { disabled = !CreateShader("shaders/GLSL/infoHeight.lua"                                      ); } break;
+		case hashString("path"  ): { disabled = !CreateShader("shaders/GLSL/infoPath.lua"                                        ); } break;
+		default                  : { disabled = !CreateShader(name                                                               ); } break;
 	}
 
 	curMode = (disabled) ? "" : name;
@@ -133,11 +126,14 @@ void CInfoTextureCombiner::Update()
 	const float isy = 2.0f * (mapDims.mapy / float(mapDims.pwr2mapy)) - 1.0f;
 
 	GL::RenderDataBufferT* rdb = GL::GetRenderBufferT();
-	rdb->SafeAppend({{-1.0f, -1.0f, 0.0f}, 0.0f, 0.0f});
-	rdb->SafeAppend({{-1.0f, +isy , 0.0f}, 0.0f, 1.0f});
-	rdb->SafeAppend({{+isx , +isy , 0.0f}, 1.0f, 1.0f});
-	rdb->SafeAppend({{+isx , -1.0f, 0.0f}, 1.0f, 0.0f});
-	rdb->Submit(GL_QUADS);
+	rdb->SafeAppend({{-1.0f, -1.0f, 0.0f}, 0.0f, 0.0f}); // bl
+	rdb->SafeAppend({{-1.0f, +isy , 0.0f}, 0.0f, 1.0f}); // tl
+	rdb->SafeAppend({{+isx , +isy , 0.0f}, 1.0f, 1.0f}); // tr
+
+	rdb->SafeAppend({{+isx , +isy , 0.0f}, 1.0f, 1.0f}); // tr
+	rdb->SafeAppend({{+isx , -1.0f, 0.0f}, 1.0f, 0.0f}); // br
+	rdb->SafeAppend({{-1.0f, -1.0f, 0.0f}, 0.0f, 0.0f}); // bl
+	rdb->Submit(GL_TRIANGLES);
 	shader->Disable();
 
 	glAttribStatePtr->ViewPort(globalRendering->viewPosX, 0,  globalRendering->viewSizeX, globalRendering->viewSizeY);

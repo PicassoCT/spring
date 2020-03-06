@@ -17,14 +17,13 @@
 #include "Rendering/Env/MapRendering.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/RenderDataBuffer.hpp"
-#include "Rendering/GL/VertexArray.h"
 #include "Rendering/Shaders/Shader.h"
 #include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/FastMath.h"
 #include "System/SafeUtil.h"
 #include "System/Log/ILog.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 
 static constexpr int MIN_GROUND_DETAIL[] = {                               0,   4};
 static constexpr int MAX_GROUND_DETAIL[] = {CBasicMeshDrawer::LOD_LEVELS - 1, 200};
@@ -43,6 +42,7 @@ CONFIG(int, MaxDynamicMapLights)
 	.minimumValue(0);
 
 CONFIG(bool, AllowDeferredMapRendering).defaultValue(false).safemodeValue(false);
+CONFIG(bool, AllowDrawMapPostDeferredEvents).defaultValue(true);
 
 
 CONFIG(int, ROAM)
@@ -56,6 +56,7 @@ CONFIG(int, ROAM)
 CSMFGroundDrawer::CSMFGroundDrawer(CSMFReadMap* rm)
 	: smfMap(rm)
 	, meshDrawer(nullptr)
+	, geomBuffer{"GROUNDDRAWER-GBUFFER"}
 {
 	drawerMode = (configHandler->GetInt("ROAM") != 0)? SMF_MESHDRAWER_ROAM: SMF_MESHDRAWER_BASIC;
 	groundDetail = configHandler->GetInt("GroundDetail");
@@ -70,12 +71,12 @@ CSMFGroundDrawer::CSMFGroundDrawer(CSMFReadMap* rm)
 
 	// LH must be initialized before render-state is initialized
 	lightHandler.Init(configHandler->GetInt("MaxDynamicMapLights"));
-	geomBuffer.SetName("GROUNDDRAWER-GBUFFER");
 
 	drawForward = true;
 	drawDeferred = geomBuffer.Valid();
 	drawMapEdges = configHandler->GetBool("MapBorder");
-	drawWaterPlane = false && waterRendering->hasWaterPlane;
+	drawWaterPlane = false; // waterRendering->hasWaterPlane;
+	postDeferredEvents = configHandler->GetBool("AllowDrawMapPostDeferredEvents");
 
 	smfRenderStates[RENDER_STATE_SSP]->Init(this);
 	smfRenderStates[RENDER_STATE_SSP]->Update(this, nullptr);
@@ -246,8 +247,8 @@ void CSMFGroundDrawer::CreateWaterPlanes(bool camOutsideMap) {
 		Shader::IProgramObject* shaderProg = renderDataBuffer.CreateShader((sizeof(shaderObjs) / sizeof(shaderObjs[0])), 0, &shaderObjs[0], nullptr);
 
 		shaderProg->Enable();
-		shaderProg->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-		shaderProg->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::Identity());
+		shaderProg->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+		shaderProg->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::Identity());
 		shaderProg->SetUniform("u_plane_offset", 0.0f);
 		shaderProg->SetUniform("u_gamma_exponent", globalRendering->gammaExponent);
 		shaderProg->Disable();
@@ -258,7 +259,7 @@ void CSMFGroundDrawer::CreateBorderShader() {
 	std::string vsCode = std::move(Shader::GetShaderSource("GLSL/SMFBorderVertProg4.glsl"));
 	std::string fsCode = std::move(Shader::GetShaderSource("GLSL/SMFBorderFragProg4.glsl"));
 
-	Shader::GLSLShaderObject shaderObjs[2] = {{GL_VERTEX_SHADER, vsCode.c_str(), ""}, {GL_FRAGMENT_SHADER, fsCode.c_str(), ""}};
+	Shader::GLSLShaderObject shaderObjs[2] = {{GL_VERTEX_SHADER, vsCode, ""}, {GL_FRAGMENT_SHADER, fsCode, ""}};
 	Shader::IProgramObject* shaderProg = &borderShader;
 
 	borderShader.AttachShaderObject(&shaderObjs[0]);
@@ -270,9 +271,9 @@ void CSMFGroundDrawer::CreateBorderShader() {
 	borderShader.Validate();
 
 	shaderProg->Enable();
-	shaderProg->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, CMatrix44f::Identity());
-	shaderProg->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, CMatrix44f::Identity());
-	shaderProg->SetUniform("u_diffuse_tex_sqr", -1, -1);
+	shaderProg->SetUniformMatrix4x4<float>("u_movi_mat", false, CMatrix44f::Identity());
+	shaderProg->SetUniformMatrix4x4<float>("u_proj_mat", false, CMatrix44f::Identity());
+	shaderProg->SetUniform("u_diffuse_tex_sqr", -1, -1, -1);
 	shaderProg->SetUniform("u_diffuse_tex", 0);
 	shaderProg->SetUniform("u_detail_tex", 2);
 	shaderProg->SetUniform("u_gamma_exponent", globalRendering->gammaExponent);
@@ -288,8 +289,8 @@ void CSMFGroundDrawer::DrawWaterPlane(bool drawWaterReflection) {
 	Shader::IProgramObject* shader = &buffer.GetShader();
 
 	shader->Enable();
-	shader->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix());
-	shader->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
+	shader->SetUniformMatrix4x4<float>("u_movi_mat", false, camera->GetViewMatrix());
+	shader->SetUniformMatrix4x4<float>("u_proj_mat", false, camera->GetProjectionMatrix());
 	shader->SetUniform("u_plane_offset", std::min(-200.0f, smfMap->GetCurrMinHeight() - 400.0f));
 	shader->SetUniform("u_gamma_exponent", globalRendering->gammaExponent);
 	buffer.Submit(GL_TRIANGLE_STRIP, 0, buffer.GetNumElems<VA_TYPE_C>());
@@ -304,8 +305,8 @@ ISMFRenderState* CSMFGroundDrawer::SelectRenderState(const DrawPass::e& drawPass
 	// [1] := default GLSL, same condition
 	const unsigned int stateEnums[2] = {RENDER_STATE_LUA, RENDER_STATE_SSP};
 
-	for (unsigned int n = 0; n < 2; n++) {
-		ISMFRenderState* state = smfRenderStates[ stateEnums[n] ];
+	for (const unsigned int stateEnum: stateEnums) {
+		ISMFRenderState* state = smfRenderStates[stateEnum];
 
 		if (!state->CanEnable(this))
 			continue;
@@ -354,10 +355,8 @@ void CSMFGroundDrawer::DrawDeferredPass(const DrawPass::e& drawPass, bool alphaT
 		smfRenderStates[RENDER_STATE_SEL]->SetCurrentShader(DrawPass::TerrainDeferred);
 		smfRenderStates[RENDER_STATE_SEL]->Enable(this, DrawPass::TerrainDeferred);
 
-		if (alphaTest) {
-			glAttribStatePtr->EnableAlphaTest();
-			glAttribStatePtr->AlphaFunc(GL_GREATER, mapInfo->map.voidAlphaMin);
-		}
+		if (alphaTest)
+			smfRenderStates[RENDER_STATE_SEL]->SetAlphaTest({mapInfo->map.voidAlphaMin, 1.0f, 0.0f, 0.0f}); // test > min
 
 		if (HaveLuaRenderState())
 			eventHandler.DrawGroundPreDeferred();
@@ -365,7 +364,7 @@ void CSMFGroundDrawer::DrawDeferredPass(const DrawPass::e& drawPass, bool alphaT
 		meshDrawer->DrawMesh(drawPass);
 
 		if (alphaTest)
-			glAttribStatePtr->DisableAlphaTest();
+			smfRenderStates[RENDER_STATE_SEL]->SetAlphaTest({0.0f, 0.0f, 0.0f, 1.0f}); // no test
 
 		smfRenderStates[RENDER_STATE_SEL]->Disable(this, drawPass);
 		smfRenderStates[RENDER_STATE_SEL]->SetCurrentShader(DrawPass::Normal);
@@ -378,10 +377,9 @@ void CSMFGroundDrawer::DrawDeferredPass(const DrawPass::e& drawPass, bool alphaT
 	geomBuffer.DrawDebug(geomBuffer.GetBufferTexture(GL::GeometryBuffer::ATTACHMENT_NORMTEX));
 	#endif
 
-	// must be after the unbind
-	if (!drawForward) {
+	// send event if no forward pass will follow; must be done after the unbind
+	if (!drawForward || postDeferredEvents)
 		eventHandler.DrawGroundPostDeferred();
-	}
 }
 
 void CSMFGroundDrawer::DrawForwardPass(const DrawPass::e& drawPass, bool alphaTest)
@@ -398,20 +396,25 @@ void CSMFGroundDrawer::DrawForwardPass(const DrawPass::e& drawPass, bool alphaTe
 		if (wireframe)
 			glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-		if (alphaTest) {
-			glAttribStatePtr->EnableAlphaTest();
-			glAttribStatePtr->AlphaFunc(GL_GREATER, mapInfo->map.voidAlphaMin);
-		}
+		if (alphaTest)
+			smfRenderStates[RENDER_STATE_SEL]->SetAlphaTest({mapInfo->map.voidAlphaMin, 1.0f, 0.0f, 0.0f}); // test > min
 
 		if (HaveLuaRenderState())
 			eventHandler.DrawGroundPreForward();
 
 		meshDrawer->DrawMesh(drawPass);
 
+		if (alphaTest)
+			smfRenderStates[RENDER_STATE_SEL]->SetAlphaTest({0.0f, 0.0f, 0.0f, 1.0f}); // no test
+
+
 		glAttribStatePtr->PopBits();
 
 		smfRenderStates[RENDER_STATE_SEL]->Disable(this, drawPass);
 		smfRenderStates[RENDER_STATE_SEL]->SetCurrentShader(DrawPass::Normal);
+
+		if (HaveLuaRenderState())
+			eventHandler.DrawGroundPostForward();
 	}
 }
 
@@ -428,6 +431,8 @@ void CSMFGroundDrawer::Draw(const DrawPass::e& drawPass)
 	glAttribStatePtr->EnableCullFace();
 	glAttribStatePtr->CullFace(GL_BACK);
 
+	groundTextures->BindSquareTextureArray();
+
 	// do the deferred pass first, will allow us to re-use
 	// its output at some future point and eventually draw
 	// the entire map deferred
@@ -437,6 +442,7 @@ void CSMFGroundDrawer::Draw(const DrawPass::e& drawPass)
 	if (drawForward)
 		DrawForwardPass(drawPass, mapRendering->voidGround || (mapRendering->voidWater && drawPass != DrawPass::WaterReflection));
 
+	groundTextures->UnBindSquareTextureArray();
 	glAttribStatePtr->DisableCullFace();
 
 	if (drawPass != DrawPass::Normal)
@@ -462,8 +468,6 @@ void CSMFGroundDrawer::DrawBorder(const DrawPass::e drawPass)
 	glActiveTexture(GL_TEXTURE2);
 	glBindTexture(GL_TEXTURE_2D, smfMap->GetDetailTexture());
 
-	glActiveTexture(GL_TEXTURE0);
-
 
 	glAttribStatePtr->EnableCullFace();
 	glAttribStatePtr->CullFace(GL_BACK);
@@ -471,24 +475,18 @@ void CSMFGroundDrawer::DrawBorder(const DrawPass::e drawPass)
 	glAttribStatePtr->EnableBlendMask();
 	glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_LINE * wireframe + GL_FILL * (1 - wireframe));
 
-	#if 0
-	if (mapRendering->voidWater && (drawPass != DrawPass::WaterReflection)) {
-		glAttribStatePtr->EnableAlphaTest();
-		glAttribStatePtr->AlphaFunc(GL_GREATER, 0.9f);
-	}
-	#endif
-
 	shaderProg->Enable();
-	shaderProg->SetUniformMatrix4x4<const char*, float>("u_movi_mat", false, camera->GetViewMatrix());
-	shaderProg->SetUniformMatrix4x4<const char*, float>("u_proj_mat", false, camera->GetProjectionMatrix());
-	shaderProg->SetUniform<const char*, float>("u_gamma_exponent", globalRendering->gammaExponent);
-	meshDrawer->DrawBorderMesh(drawPass); // calls back into ::SetupBigSquare
-	shaderProg->Disable();
+	shaderProg->SetUniformMatrix4x4<float>("u_movi_mat", false, camera->GetViewMatrix());
+	shaderProg->SetUniformMatrix4x4<float>("u_proj_mat", false, camera->GetProjectionMatrix());
+	shaderProg->SetUniform<float>("u_gamma_exponent", globalRendering->gammaExponent);
+	// shaderProg->SetUniform("u_alpha_test_ctrl", 0.9f, 1.0f, 0.0f, 0.0f); // test > 0.9 if (mapRendering->voidWater && (drawPass != DrawPass::WaterReflection))
 
-	#if 0
-	if (mapRendering->voidWater && (drawPass != DrawPass::WaterReflection))
-		glAttribStatePtr->DisableAlphaTest();
-	#endif
+	groundTextures->BindSquareTextureArray();
+	meshDrawer->DrawBorderMesh(drawPass); // calls back into ::SetupBigSquare
+	groundTextures->UnBindSquareTextureArray();
+
+	// shaderProg->SetUniform("u_alpha_test_ctrl", 0.0f, 0.0f, 0.0f, 1.0f); // no test
+	shaderProg->Disable();
 
 	glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glAttribStatePtr->DisableBlendMask();
@@ -532,13 +530,18 @@ void CSMFGroundDrawer::SetLuaShader(const LuaMapShaderData* luaMapShaderData)
 
 void CSMFGroundDrawer::SetupBigSquare(const int bigSquareX, const int bigSquareY)
 {
-	groundTextures->BindSquareTexture(bigSquareX, bigSquareY);
-	smfRenderStates[RENDER_STATE_SEL]->SetSquareTexGen(bigSquareX, bigSquareY);
+	const int sqrIdx = bigSquareY * smfMap->numBigTexX + bigSquareX;
+	const int sqrMip = groundTextures->GetSquareMipLevel(sqrIdx);
 
-	if (!borderShader.IsBound())
+	groundTextures->DrawUpdateSquare(bigSquareX, bigSquareY);
+	smfRenderStates[RENDER_STATE_SEL]->SetSquareTexGen(bigSquareX, bigSquareY, smfMap->numBigTexX, sqrMip);
+
+	Shader::IProgramObject& ipo = borderShader;
+
+	if (!ipo.IsBound())
 		return;
 
-	static_cast<Shader::IProgramObject&>(borderShader).SetUniform("u_diffuse_tex_sqr", bigSquareX, bigSquareY);
+	ipo.SetUniform("u_diffuse_tex_sqr", bigSquareX, bigSquareY, sqrIdx);
 }
 
 

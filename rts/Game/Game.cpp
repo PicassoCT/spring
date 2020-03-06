@@ -107,8 +107,9 @@
 #include "System/EventHandler.h"
 #include "System/Exceptions.h"
 #include "System/Sync/FPUCheck.h"
-#include "System/myMath.h"
 #include "System/SafeUtil.h"
+#include "System/SpringExitCode.h"
+#include "System/SpringMath.h"
 #include "System/FileSystem/FileSystem.h"
 #include "System/LoadSave/LoadSaveHandler.h"
 #include "System/LoadSave/DemoRecorder.h"
@@ -164,8 +165,9 @@ CR_REG_METADATA(CGame, (
 	CR_IGNORED(chatSound),
 	CR_MEMBER(hideInterface),
 
-	CR_IGNORED(finishedLoading),
-	CR_MEMBER(gameOver),
+	// FIXME: atomic type deduction
+	CR_IGNORED(loadDone),
+	CR_IGNORED(gameOver),
 
 	CR_IGNORED(gameDrawMode),
 	CR_IGNORED(windowedEdgeMove),
@@ -201,7 +203,7 @@ CR_REG_METADATA(CGame, (
 	CR_IGNORED(jobDispatcher),
 	CR_IGNORED(curKeyChain),
 	CR_IGNORED(worldDrawer),
-	CR_IGNORED(saveFile),
+	CR_IGNORED(saveFileHandler),
 
 	// Post Load
 	CR_POSTLOAD(PostLoad)
@@ -209,7 +211,7 @@ CR_REG_METADATA(CGame, (
 
 
 
-CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHandler* saveFile)
+CGame::CGame(const std::string& mapFileName, const std::string& modFileName, ILoadSaveHandler* saveFile)
 	: frameStartTime(spring_gettime())
 	, lastSimFrameTime(spring_gettime())
 	, lastDrawFrameTime(spring_gettime())
@@ -221,7 +223,7 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 	, lastUnsyncedUpdateTime(spring_gettime())
 	, skipLastDrawTime(spring_gettime())
 
-	, saveFile(saveFile)
+	, saveFileHandler(saveFile)
 {
 	game = this;
 
@@ -250,13 +252,13 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 	// clear left-over receivers in case we reloaded
 	gameCommandConsole.ResetState();
 
-	wind.ResetState();
+	envResHandler.ResetState();
 
-	modInfo.Init(modName.c_str());
+	modInfo.Init(modFileName);
 
 	// needed for LuaIntro (pushes LuaConstGame)
 	assert(mapInfo == nullptr);
-	mapInfo = new CMapInfo(gameSetup->MapFile(), gameSetup->mapName);
+	mapInfo = new CMapInfo(mapFileName, gameSetup->mapName);
 
 	if (!sideParser.Load())
 		throw content_error(sideParser.GetErrorLog());
@@ -277,10 +279,6 @@ CGame::CGame(const std::string& mapName, const std::string& modName, ILoadSaveHa
 
 CGame::~CGame()
 {
-#ifdef TRACE_SYNC
-	tracefile << "[" << __func__ << "]";
-#endif
-
 	ENTER_SYNCED_CODE();
 	LOG("[Game::%s][1]", __func__);
 
@@ -291,7 +289,7 @@ CGame::~CGame()
 	KillSimulation();
 
 	LOG("[Game::%s][2]", __func__);
-	spring::SafeDelete(saveFile); // ILoadSaveHandler, depends on vfsHandler via ~IArchive
+	spring::SafeDelete(saveFileHandler); // ILoadSaveHandler, depends on vfsHandler via ~IArchive
 
 	LOG("[Game::%s][3]", __func__);
 	CCategoryHandler::RemoveInstance();
@@ -307,15 +305,13 @@ void CGame::AddTimedJobs()
 		JobDispatcher::Job j;
 
 		j.f = [this]() -> bool {
-			SCOPED_TIMER("Misc::CollectGarbage");
-
 			const float simFrameDeltaTime = (spring_gettime() - lastSimFrameNetPacketTime).toMilliSecsf();
 			const float gcForcedDeltaTime = (5.0f * 1000.0f) / (GAME_SPEED * gs->speedFactor);
 
 			// SimFrame handles gc when not paused, this all other cases
 			// do not check the global synced state, never true in demos
 			if (luaGCControl == 1 || simFrameDeltaTime > gcForcedDeltaTime)
-				eventHandler.CollectGarbage();
+				eventHandler.CollectGarbage(false);
 
 			CInputReceiver::CollectGarbage();
 			return true;
@@ -344,7 +340,7 @@ void CGame::AddTimedJobs()
 	}
 }
 
-void CGame::LoadGame(const std::string& mapName)
+void CGame::Load(const std::string& mapFileName)
 {
 	// NOTE:
 	//   this is needed for LuaHandle::CallOut*UpdateCallIn
@@ -359,15 +355,21 @@ void CGame::LoadGame(const std::string& mapName)
 	auto& globalQuit = gu->globalQuit;
 	bool  forcedQuit = false;
 
-	LuaParser defsParser("gamedata/defs.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP, {true}, {false});
+	LuaParser baseDefsParser("gamedata/defs.lua", SPRING_VFS_MOD_BASE, SPRING_VFS_ZIP, {true}, {false});
+	LuaParser nullDefsParser("return {UnitDefs = {}, FeatureDefs = {}, WeaponDefs = {}, ArmorDefs = {}, MoveDefs = {}}", SPRING_VFS_ZIP, 0, {true}, {true});
+
+	LuaParser* defsParser = &baseDefsParser;
 
 	try {
-		LOG("[Game::%s][1] globalQuit=%d threaded=%d", __func__, globalQuit, !Threading::IsMainThread());
+		LOG("[Game::%s][1] globalQuit=%d threaded=%d", __func__, globalQuit.load(), !Threading::IsMainThread());
 
-		LoadMap(mapName);
-		LoadDefs(&defsParser);
+		LoadMap(mapFileName);
+		LoadDefs(defsParser);
 	} catch (const content_error& e) {
 		LOG_L(L_WARNING, "[Game::%s][1] forced quit with exception \"%s\"", __func__, e.what());
+
+		defsParser = &nullDefsParser;
+		defsParser->Execute();
 
 		// we can not (yet) do a clean early exit here because the dtor assumes
 		// all loading stages proceeded normally; just force automatic shutdown
@@ -375,9 +377,9 @@ void CGame::LoadGame(const std::string& mapName)
 	}
 
 	try {
-		LOG("[Game::%s][2] globalQuit=%d forcedQuit=%d", __func__, globalQuit, forcedQuit);
+		LOG("[Game::%s][2] globalQuit=%d forcedQuit=%d", __func__, globalQuit.load(), forcedQuit);
 
-		PreLoadSimulation(&defsParser);
+		PreLoadSimulation(defsParser);
 		PreLoadRendering();
 	} catch (const content_error& e) {
 		LOG_L(L_WARNING, "[Game::%s][2] forced quit with exception \"%s\"", __func__, e.what());
@@ -385,41 +387,55 @@ void CGame::LoadGame(const std::string& mapName)
 	}
 
 	try {
-		LOG("[Game::%s][3] globalQuit=%d forcedQuit=%d", __func__, globalQuit, forcedQuit);
+		LOG("[Game::%s][3] globalQuit=%d forcedQuit=%d", __func__, globalQuit.load(), forcedQuit);
 
-		PostLoadSimulation(&defsParser);
+		PostLoadSimulation(defsParser);
 		PostLoadRendering();
 	} catch (const content_error& e) {
 		LOG_L(L_WARNING, "[Game::%s][3] forced quit with exception \"%s\"", __func__, e.what());
 		forcedQuit = true;
 	}
 
-	try {
-		LOG("[Game::%s][4] globalQuit=%d forcedQuit=%d", __func__, globalQuit, forcedQuit);
+	// skip Lua handlers in case of forced exit
+	// makes the specific error(s) more obvious
+	if (!forcedQuit) {
+		try {
+			LOG("[Game::%s][4] globalQuit=%d forcedQuit=%d", __func__, globalQuit.load(), forcedQuit);
 
-		LoadInterface();
-		LoadLua();
-	} catch (const content_error& e) {
-		LOG_L(L_WARNING, "[Game::%s][4] forced quit with exception \"%s\"", __func__, e.what());
-		forcedQuit = true;
+			LoadInterface();
+			LoadLua(saveFileHandler != nullptr, false);
+		} catch (const content_error& e) {
+			LOG_L(L_WARNING, "[Game::%s][4] forced quit with exception \"%s\"", __func__, e.what());
+			forcedQuit = true;
+		}
+	}
+
+	if (!forcedQuit) {
+		try {
+			LOG("[Game::%s][5] globalQuit=%d forcedQuit=%d", __func__, globalQuit.load(), forcedQuit);
+
+			LoadFinalize();
+			LoadSkirmishAIs();
+		} catch (const content_error& e) {
+			LOG_L(L_WARNING, "[Game::%s][5] forced quit with exception \"%s\"", __func__, e.what());
+			forcedQuit = true;
+		}
 	}
 
 	try {
-		LOG("[Game::%s][5] globalQuit=%d forcedQuit=%d", __func__, globalQuit, forcedQuit);
+		LOG("[Game::%s][6] globalQuit=%d forcedQuit=%d", __func__, globalQuit.load(), forcedQuit);
 
-		LoadFinalize();
-		LoadSkirmishAIs();
-	} catch (const content_error& e) {
-		LOG_L(L_WARNING, "[Game::%s][5] forced quit with exception \"%s\"", __func__, e.what());
-		forcedQuit = true;
-	}
-
-	try {
-		LOG("[Game::%s][6] globalQuit=%d forcedQuit=%d", __func__, globalQuit, forcedQuit);
-
-		if (!globalQuit && saveFile != nullptr) {
+		if (!globalQuit && saveFileHandler != nullptr) {
 			loadscreen->SetLoadMessage("Loading Saved Game");
-			saveFile->LoadGame();
+			saveFileHandler->LoadGame();
+			LoadLua(false, true);
+		}
+
+		{
+			char msgBuf[512];
+
+			SNPRINTF(msgBuf, sizeof(msgBuf), "[Game::%s][lua{Rules,Gaia}={%p,%p}]", __func__, luaRules, luaGaia);
+			CLIENT_NETLOG(gu->myPlayerNum, LOG_LEVEL_INFO, msgBuf);
 		}
 	} catch (const content_error& e) {
 		LOG_L(L_WARNING, "[Game::%s][6] forced quit with exception \"%s\"", __func__, e.what());
@@ -429,12 +445,15 @@ void CGame::LoadGame(const std::string& mapName)
 	Watchdog::DeregisterThread(WDT_LOAD);
 	AddTimedJobs();
 
-	finishedLoading = true;
-	globalQuit |= forcedQuit;
+	if (forcedQuit)
+		spring::exitCode = spring::EXIT_CODE_NOLOAD;
+
+	loadDone = true;
+	globalQuit = globalQuit | forcedQuit;
 }
 
 
-void CGame::LoadMap(const std::string& mapName)
+void CGame::LoadMap(const std::string& mapFileName)
 {
 	ENTER_SYNCED_CODE();
 
@@ -446,9 +465,9 @@ void CGame::LoadMap(const std::string& mapName)
 
 		// simulation components
 		helper->Init();
-		readMap = CReadMap::LoadMap(mapName);
+		readMap = CReadMap::LoadMap(mapFileName);
 
-		// half size; building positions are snapped to multiples of 2*SQUARE_SIZE
+		// half size; building positions are snapped to multiples of BUILD_SQUARE_SIZE
 		buildingMaskMap.Init(mapDims.hmapx * mapDims.hmapy);
 		groundBlockingObjectMap.Init(mapDims.mapSquares);
 	}
@@ -465,7 +484,7 @@ void CGame::LoadDefs(LuaParser* defsParser)
 		ScopedOnceTimer timer("Game::LoadDefs (GameData)");
 		loadscreen->SetLoadMessage("Loading GameData Definitions");
 
-		defsParser->SetupLua(true);
+		defsParser->SetupLua(true, true);
 		// customize the defs environment; LuaParser has no access to LuaSyncedRead
 		defsParser->GetTable("Spring");
 		defsParser->AddFunc("GetModOptions", LuaSyncedRead::GetModOptions);
@@ -502,7 +521,7 @@ void CGame::LoadDefs(LuaParser* defsParser)
 
 	{
 		loadscreen->SetLoadMessage("Loading Radar Icons");
-		icon::iconHandler = new icon::CIconHandler();
+		icon::iconHandler.Init();
 	}
 	{
 		ScopedOnceTimer timer("Game::LoadDefs (Sound)");
@@ -515,7 +534,7 @@ void CGame::LoadDefs(LuaParser* defsParser)
 		soundDefsParser.EndTable();
 
 		sound->LoadSoundDefs(&soundDefsParser);
-		chatSound = sound->GetSoundId("IncomingChat");
+		chatSound = sound->GetDefSoundId("IncomingChat");
 	}
 
 	LEAVE_SYNCED_CODE();
@@ -593,10 +612,11 @@ void CGame::PostLoadSimulation(LuaParser* defsParser)
 	// load map-specific features
 	loadscreen->SetLoadMessage("Initializing Map Features");
 	featureDefHandler->LoadFeatureDefsFromMap();
-	if (saveFile == nullptr)
+	if (saveFileHandler == nullptr)
 		featureHandler.LoadFeaturesFromMap();
 
-	wind.LoadWind(mapInfo->atmosphere.minWind, mapInfo->atmosphere.maxWind);
+	envResHandler.LoadTidal(mapInfo->map.tidalStrength);
+	envResHandler.LoadWind(mapInfo->atmosphere.minWind, mapInfo->atmosphere.maxWind);
 
 
 	inMapDrawerModel = new CInMapDrawModel();
@@ -692,54 +712,82 @@ void CGame::LoadInterface()
 	resourceBar = new CResourceBar();
 	selectionKeys.Init();
 
+	uiGroupHandlers.clear();
+	uiGroupHandlers.reserve(teamHandler.ActiveTeams());
+
 	for (int t = 0; t < teamHandler.ActiveTeams(); ++t) {
-		grouphandlers.push_back(new CGroupHandler(t));
+		uiGroupHandlers.emplace_back(t);
 	}
 
-	// note: disable is needed in case user reloads before StartPlaying
-	GameSetupDrawer::Disable();
-	GameSetupDrawer::Enable();
+	if (saveFileHandler == nullptr) {
+		// note: disable is needed in case user reloads before StartPlaying
+		GameSetupDrawer::Disable();
+		GameSetupDrawer::Enable();
+	}
 }
 
-void CGame::LoadLua()
+void CGame::LoadLua(bool onlySynced, bool onlyUnsynced)
 {
+	assert(!(onlySynced && onlyUnsynced));
 	// Lua components
 	ENTER_SYNCED_CODE();
+	CLuaHandle::SetDevMode(gameSetup->luaDevMode);
+	LOG("[Game::%s] Lua developer mode %sabled", __func__, (CLuaHandle::GetDevMode()? "en": "dis"));
 
-	loadscreen->SetLoadMessage("Loading LuaRules");
-	CLuaRules::LoadFreeHandler();
+	const std::string prefix = (onlySynced ? "Synced " : (onlyUnsynced ? "Unsynced " : ""));
+	const std::string names[] = {"LuaRules", "LuaGaia"};
 
-	loadscreen->SetLoadMessage("Loading LuaGaia");
-	CLuaGaia::LoadFreeHandler();
+	CSplitLuaHandle* handles[] = {luaRules, luaGaia};
+	decltype(&CLuaRules::LoadFreeHandler) loaders[] = {CLuaRules::LoadFreeHandler, CLuaGaia::LoadFreeHandler};
+
+	for (int i = 0; i < 2; i++) {
+		loadscreen->SetLoadMessage("Loading " + prefix + names[i]);
+
+		if (onlyUnsynced && handles[i] != nullptr) {
+			handles[i]->InitUnsynced();
+		} else {
+			loaders[i](onlySynced);
+		}
+	}
 
 	LEAVE_SYNCED_CODE();
 
-	loadscreen->SetLoadMessage("Loading LuaUI");
-	CLuaUI::LoadFreeHandler();
+	if (!onlySynced) {
+		loadscreen->SetLoadMessage("Loading LuaUI");
+		CLuaUI::LoadFreeHandler();
+	}
 }
 
 void CGame::LoadSkirmishAIs()
 {
 	if (gameSetup->hostDemo)
 		return;
+	// happens if LoadInterface was skipped or interrupted on forcedQuit
+	// the AI callback code expects this to be non-empty on construction
+	if (uiGroupHandlers.empty())
+		return;
 
-	// create a Skirmish AI if required
+	// create Skirmish AI's if required
 	const std::vector<uint8_t>& localAIs = skirmishAIHandler.GetSkirmishAIsByPlayer(gu->myPlayerNum);
+	const std::string timerName = std::string("Game::") + __func__;
 
 	if (!localAIs.empty()) {
+		ScopedOnceTimer timer(timerName);
 		loadscreen->SetLoadMessage("Loading Skirmish AIs");
 
-		for (auto ai = localAIs.begin(); ai != localAIs.end(); ++ai) {
-			skirmishAIHandler.CreateLocalSkirmishAI(*ai);
+		for (uint8_t localAI: localAIs) {
+			ScopedOnceTimer subTimer(timerName + "::CreateAI(id=" + IntToString(localAI) + ")");
+			skirmishAIHandler.CreateLocalSkirmishAI(localAI);
 		}
 	}
 }
 
 void CGame::LoadFinalize()
 {
-	if (saveFile == nullptr) {
+	if (saveFileHandler == nullptr) {
 		ENTER_SYNCED_CODE();
 		eventHandler.GamePreload();
+		eventHandler.CollectGarbage(true);
 		LEAVE_SYNCED_CODE();
 	}
 
@@ -816,14 +864,14 @@ void CGame::KillMisc()
 
 	LOG("[Game::%s][3]", __func__);
 	// TODO move these to the end of this dtor, once all action-executors are registered by their respective engine sub-parts
-	UnsyncedGameCommands::DestroyInstance();
-	SyncedGameCommands::DestroyInstance();
+	UnsyncedGameCommands::DestroyInstance(gu->globalReload);
+	SyncedGameCommands::DestroyInstance(gu->globalReload);
 }
 
 void CGame::KillRendering()
 {
 	LOG("[Game::%s][1]", __func__);
-	spring::SafeDelete(icon::iconHandler);
+	icon::iconHandler.Kill();
 	spring::SafeDelete(geometricObjects);
 	worldDrawer.Kill();
 }
@@ -837,18 +885,12 @@ void CGame::KillInterface()
 	spring::SafeDelete(minimap);
 	spring::SafeDelete(resourceBar);
 	spring::SafeDelete(tooltip); // CTooltipConsole*
+
+	LOG("[Game::%s][2]", __func__);
 	keyBindings.Kill();
 	selectionKeys.Kill(); // CSelectionKeyHandler*
 	spring::SafeDelete(inMapDrawerModel);
 	spring::SafeDelete(inMapDrawer);
-
-	LOG("[Game::%s][2]", __func__);
-
-	for (unsigned int i = 0; i < grouphandlers.size(); i++) {
-		spring::SafeDelete(grouphandlers[i]);
-	}
-
-	grouphandlers.clear();
 }
 
 void CGame::KillSimulation()
@@ -1038,7 +1080,7 @@ bool CGame::Update()
 
 	if (!gameOver) {
 		if (clientNet->NeedsReconnect())
-			clientNet->AttemptReconnect(SpringVersion::GetFull(), Platform::GetPlatformStr());
+			clientNet->AttemptReconnect(SpringVersion::GetSync(), Platform::GetPlatformStr());
 
 		if (clientNet->CheckTimeout(0, gs->PreSimFrame()))
 			GameEnd({}, true);
@@ -1050,12 +1092,15 @@ bool CGame::Update()
 		SLuaAllocError error = {};
 
 		if (spring_lua_alloc_get_error(&error)) {
-			// convert the "abc\ndef\n..." buffer into "abc", "def", ... chunks
+			// convert the "abc\ndef\n..." buffer into 0-terminated "abc", "def", ... chunks
 			for (char *ptr = &error.msgBuf[0], *tmp = nullptr; (tmp = strstr(ptr, "\n")) != nullptr; ptr = tmp + 1) {
 				*tmp = 0;
 
 				LOG_L(L_FATAL, "%s", error.msgBuf);
 				CLIENT_NETLOG(gu->myPlayerNum, LOG_LEVEL_FATAL, error.msgBuf);
+
+				// force a restart if synced Lua died, simply reloading might not work
+				gu->globalQuit = gu->globalQuit || (strstr(error.msgBuf, "[OOM] synced=1") != nullptr);
 			}
 		}
 	}
@@ -1118,7 +1163,7 @@ bool CGame::UpdateUnsynced(const spring_time currentTime)
 	numDrawFrames++;
 
 	// Update the interpolation coefficient (globalRendering->timeOffset)
-	if (!gs->paused && !IsLagging() && !gs->PreSimFrame() && !videoCapturing->AllowRecord()) {
+	if (!gs->paused && !IsSimLagging() && !gs->PreSimFrame() && !videoCapturing->AllowRecord()) {
 		globalRendering->weightedSpeedFactor = 0.001f * gu->simFPS;
 		globalRendering->timeOffset = (currentTime - lastFrameTime).toMilliSecsf() * globalRendering->weightedSpeedFactor;
 	} else {
@@ -1145,10 +1190,7 @@ bool CGame::UpdateUnsynced(const spring_time currentTime)
 	// set camera
 	camHandler->UpdateController(playerHandler.Player(gu->myPlayerNum), gu->fpsMode, fullscreenEdgeMove, windowedEdgeMove);
 
-	{
-		SCOPED_TIMER("Update::UnitDrawer");
-		unitDrawer->Update();
-	}
+	unitDrawer->Update();
 	lineDrawer.UpdateLineStipple();
 
 
@@ -1163,12 +1205,8 @@ bool CGame::UpdateUnsynced(const spring_time currentTime)
 	if (newSimFrame || forceUpdate) {
 		lastUnsyncedUpdateTime = currentTime;
 
-		{
-			// TODO: should be moved to WorldDrawer::Update
-			SCOPED_TIMER("Update::InfoTexture");
-			infoTextureHandler->Update();
-		}
-
+		// TODO: should be moved to WorldDrawer::Update
+		infoTextureHandler->Update();
 		// TODO call only when camera changed
 		sound->UpdateListener(camera->GetPos(), camera->GetDir(), camera->GetUp());
 	}
@@ -1201,7 +1239,7 @@ bool CGame::UpdateUnsynced(const spring_time currentTime)
 	commandDrawer->Update();
 
 	{
-		SCOPED_TIMER("Update::Update");
+		SCOPED_TIMER("Update::EventHandler");
 		eventHandler.Update();
 	}
 	eventHandler.DbgTimingInfo(TIMING_UNSYNCED, currentTime, spring_now());
@@ -1218,7 +1256,7 @@ bool CGame::Draw() {
 	const spring_time currentTimePreDraw = spring_gettime();
 
 	SCOPED_SPECIAL_TIMER("Draw");
-	globalRendering->SetGLTimeStamp(0);
+	globalRendering->SetGLTimeStamp(CGlobalRendering::FRAME_REF_TIME_QUERY_IDX);
 
 	SetDrawMode(Game::NormalDraw);
 
@@ -1237,7 +1275,7 @@ bool CGame::Draw() {
 			return false;
 	}
 
-	if (globalRendering->drawdebug) {
+	if (globalRendering->drawDebug) {
 		const float deltaFrameTime = (currentTimePreUpdate - lastSimFrameTime).toMilliSecsf();
 		const float deltaNetPacketProcTime  = (currentTimePreUpdate - lastNetPacketProcessTime ).toMilliSecsf();
 		const float deltaReceivedPacketTime = (currentTimePreUpdate - lastReceivedNetPacketTime).toMilliSecsf();
@@ -1283,7 +1321,7 @@ bool CGame::Draw() {
 		camera->Update();
 
 		worldDrawer.Draw();
-		worldDrawer.ResetMVPMatrices();
+		worldDrawer.SetupScreenState();
 	}
 
 	{
@@ -1303,7 +1341,6 @@ bool CGame::Draw() {
 	}
 
 	glAttribStatePtr->EnableDepthTest();
-	GL::LoadIdentity();
 
 	if (videoCapturing->AllowRecord()) {
 		videoCapturing->SetLastFrameTime(globalRendering->lastFrameTime = 1000.0f / GAME_SPEED);
@@ -1319,7 +1356,7 @@ bool CGame::Draw() {
 	gu->avgDrawFrameTime = mix(gu->avgDrawFrameTime, currentFrameDrawTime.toMilliSecsf(), 0.05f);
 
 	eventHandler.DbgTimingInfo(TIMING_VIDEO, currentTimePreDraw, currentTimePostDraw);
-	globalRendering->SetGLTimeStamp(CGlobalRendering::FRAME_TIME_QUERY_IDX);
+	globalRendering->SetGLTimeStamp(CGlobalRendering::FRAME_END_TIME_QUERY_IDX);
 
 	return true;
 }
@@ -1327,9 +1364,6 @@ bool CGame::Draw() {
 
 void CGame::DrawInputReceivers()
 {
-
-	glEnable(GL_TEXTURE_2D);
-
 	if (!hideInterface) {
 		{
 			SCOPED_TIMER("Draw::Screen::InputReceivers");
@@ -1348,8 +1382,6 @@ void CGame::DrawInputReceivers()
 			minimap->Draw();
 		}
 	}
-
-	glEnable(GL_TEXTURE_2D);
 }
 
 void CGame::DrawInterfaceWidgets()
@@ -1418,33 +1450,21 @@ void CGame::StartPlaying()
 {
 	assert(!playing);
 	playing = true;
-	lastReadNetTime = spring_gettime();
 
-	gu->startTime = gu->gameTime;
-	gu->myTeam = playerHandler.Player(gu->myPlayerNum)->team;
-	gu->myAllyTeam = teamHandler.AllyTeam(gu->myTeam);
-//	grouphandler->team = gu->myTeam;
+	{
+		lastReadNetTime = spring_gettime();
+
+		gu->startTime = gu->gameTime;
+		gu->myTeam = gu->GetMyPlayer()->team;
+		gu->myAllyTeam = teamHandler.AllyTeam(gu->myTeam);
+	}
 
 	GameSetupDrawer::Disable();
 	CLuaUI::UpdateTeams();
 
-	// setup the teams
-	for (int a = 0; a < teamHandler.ActiveTeams(); ++a) {
-		CTeam* team = teamHandler.Team(a);
+	teamHandler.SetDefaultStartPositions(gameSetup);
 
-		if (team->gaia)
-			continue;
-
-		if (!team->HasValidStartPos() && gameSetup->startPosType == CGameSetup::StartPos_ChooseInGame) {
-			// if the player did not choose a start position (eg. if
-			// the game was force-started by the host before sending
-			// any), silently generate one for him
-			// TODO: notify Lua of this also?
-			team->SetDefaultStartPos();
-		}
-	}
-
-	if (saveFile == nullptr)
+	if (saveFileHandler == nullptr)
 		eventHandler.GameStart();
 }
 
@@ -1465,10 +1485,6 @@ void CGame::SimFrame() {
 	// stats are reliable when paused) but see LuaUser
 	spring_lua_alloc_update_stats((gs->frameNum % GAME_SPEED) == 0);
 
-#ifdef TRACE_SYNC
-	tracefile << "New frame:" << gs->frameNum << " " << gsRNG.GetLastSeed() << "\n";
-#endif
-
 	if (!skipping) {
 		// everything here is unsynced and should ideally moved to Game::Update()
 		waitCommandsAI.Update();
@@ -1476,8 +1492,8 @@ void CGame::SimFrame() {
 		sound->NewFrame();
 		eoh->Update();
 
-		for (size_t a = 0; a < grouphandlers.size(); a++)
-			grouphandlers[a]->Update();
+		for (auto& grouphandler: uiGroupHandlers)
+			grouphandler.Update();
 
 		CPlayer* p = playerHandler.Player(gu->myPlayerNum);
 		FPSUnitController& c = p->fpsController;
@@ -1497,7 +1513,7 @@ void CGame::SimFrame() {
 			// keep garbage-collection rate tied to sim-speed
 			// (fixed 30Hz gc is not enough while catching up)
 			if (luaGCControl == 0)
-				eventHandler.CollectGarbage();
+				eventHandler.CollectGarbage(false);
 
 			eventHandler.GameFrame(gs->frameNum);
 		}
@@ -1512,7 +1528,7 @@ void CGame::SimFrame() {
 			SCOPED_TIMER("Sim::Script");
 			unitScriptEngine->Tick(33);
 		}
-		wind.Update();
+		envResHandler.Update();
 		losHandler->Update();
 		// dead ghosts have to be updated in sim, after los,
 		// to make sure they represent the current knowledge correctly.
@@ -1584,7 +1600,7 @@ void CGame::GameEnd(const std::vector<unsigned char>& winningAllyTeams, bool tim
 
 	CDemoRecorder* record = clientNet->GetDemoRecorder();
 
-	if (record == nullptr)
+	if (!record->IsValid())
 		return;
 
 	// Write CPlayer::Statistics and CTeam::Statistics to demo
@@ -1649,7 +1665,7 @@ void CGame::HandleChatMsg(const ChatMessage& msg)
 	const std::string& s = msg.msg;
 
 	if (!s.empty()) {
-		CPlayer* player = (msg.fromPlayer >= 0 && static_cast<unsigned int>(msg.fromPlayer) == SERVER_PLAYER) ? 0 : playerHandler.Player(msg.fromPlayer);
+		CPlayer* player = (msg.fromPlayer >= 0 && static_cast<unsigned int>(msg.fromPlayer) == SERVER_PLAYER) ? nullptr : playerHandler.Player(msg.fromPlayer);
 		const bool myMsg = (msg.fromPlayer == gu->myPlayerNum);
 
 		string label;
@@ -1722,8 +1738,7 @@ void CGame::HandleChatMsg(const ChatMessage& msg)
 
 
 void CGame::StartSkip(int toFrame) {
-	return; // FIXME: desyncs
-	#if 0
+	#if 0 // FIXME: desyncs
 	if (skipping)
 		LOG_L(L_ERROR, "skipping appears to be busted (%i)", skipping);
 
@@ -1756,8 +1771,7 @@ void CGame::StartSkip(int toFrame) {
 }
 
 void CGame::EndSkip() {
-	return; // FIXME
-	#if 0
+	#if 0 // FIXME
 	skipping = false;
 
 	gu->gameTime    += skipSeconds;
@@ -1789,8 +1803,6 @@ void CGame::DrawSkip(bool blackscreen) {
 	font->SetTextColor(1.0f, 1.0f, 1.0f, 1.0f);
 	font->glFormat(0.5f, 0.45f, 2.0f, FONT_CENTER | FONT_SCALE | FONT_NORM | FONT_BUFFERED, "(%i frames left)", framesLeft);
 	font->DrawBufferedGL4();
-
-	glDisable(GL_TEXTURE_2D);
 
 	const float b = 0.004f; // border
 	const float yn = 0.35f;
@@ -1829,42 +1841,30 @@ void CGame::ReloadCOB(const string& msg, int player)
 }
 
 
-bool CGame::IsLagging(float maxLatency) const
+bool CGame::IsSimLagging(float maxLatency) const
 {
-	const spring_time timeNow = spring_gettime();
-	const float diffTime = spring_tomsecs(timeNow - lastFrameTime);
+	const float deltaTime = spring_tomsecs(spring_gettime() - lastFrameTime);
+	const float sfLatency = maxLatency / gs->speedFactor;
 
-	return (!gs->paused && (diffTime > (maxLatency / gs->speedFactor)));
+	return (!gs->paused && (deltaTime > sfLatency));
 }
 
 
-void CGame::SaveGame(const std::string& filename, bool overwrite, bool usecreg)
+void CGame::Reload()
 {
-	if (!FileSystem::CreateDirectory("Saves"))
-		return;
-
-	if (overwrite || !FileSystem::FileExists(filename)) {
-		LOG("[Game::%s] saving game to %s", __func__, filename.c_str());
-		ILoadSaveHandler* ls = ILoadSaveHandler::Create(usecreg);
-		ls->mapName = gameSetup->mapName;
-		ls->modName = gameSetup->modName;
-		ls->SaveGame(filename);
-		delete ls;
-	} else {
-		LOG_L(L_WARNING, "File %s already exists(use /save -y to override)", filename.c_str());
-	}
-}
-
-
-void CGame::ReloadGame()
-{
-	if (saveFile) {
+	if (saveFileHandler != nullptr) {
 		// This reloads heightmap, triggers Load call-in, etc.
 		// Inside the Load call-in, Lua can ensure old units are wiped before new ones are placed.
-		saveFile->LoadGame();
+		saveFileHandler->LoadGame();
 	} else {
-		LOG_L(L_WARNING, "We can only reload the game when it has been started from a savegame");
+		LOG_L(L_WARNING, "[Game::%s] can only reload the game when it has been started from a savegame", __func__);
 	}
+}
+
+void CGame::Save(std::string&& fileName, std::string&& saveArgs)
+{
+	globalSaveFileData.name = std::move(fileName);
+	globalSaveFileData.args = std::move(saveArgs);
 }
 
 
@@ -1924,9 +1924,7 @@ bool CGame::ActionPressed(unsigned int key, const Action& action, bool isRepeat)
 			return true;
 	}
 
-	const std::set<std::string>& serverCommands = CGameServer::GetCommandBlackList();
-
-	if (serverCommands.find(action.command) != serverCommands.end()) {
+	if (CGameServer::IsServerCommand(action.command)) {
 		CommandMessage pckt(action, gu->myPlayerNum);
 		clientNet->Send(pckt.Pack());
 		return true;

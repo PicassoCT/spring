@@ -61,16 +61,16 @@ void CEventHandler::AddClient(CEventClient* ec)
 {
 	ListInsert(handles, ec);
 
-	for (auto it = eventMap.cbegin(); it != eventMap.cend(); ++it) {
-		const EventInfo& ei = it->second;
+	for (const auto& element: eventMap) {
+		const EventInfo& ei = element.second;
 
 		if (!ei.HasPropBit(MANAGED_BIT))
 			continue;
 
-		if (!ec->WantsEvent(it->first))
+		if (!ec->WantsEvent(element.first))
 			continue;
 
-		InsertEvent(ec, it->first);
+		InsertEvent(ec, element.first);
 	}
 }
 
@@ -81,13 +81,13 @@ void CEventHandler::RemoveClient(CEventClient* ec)
 
 	ListRemove(handles, ec);
 
-	for (auto it = eventMap.cbegin(); it != eventMap.cend(); ++it) {
-		const EventInfo& ei = it->second;
+	for (const auto& element: eventMap) {
+		const EventInfo& ei = element.second;
 
 		if (!ei.HasPropBit(MANAGED_BIT))
 			continue;
 
-		RemoveEvent(ec, it->first);
+		RemoveEvent(ec, element.first);
 	}
 }
 
@@ -99,8 +99,8 @@ void CEventHandler::GetEventList(std::vector<std::string>& list) const
 {
 	list.clear();
 
-	for (auto it = eventMap.cbegin(); it != eventMap.cend(); ++it) {
-		list.push_back(it->first);
+	for (const auto& element: eventMap) {
+		list.push_back(element.first);
 	}
 }
 
@@ -246,9 +246,9 @@ bool CEventHandler::CommandFallback(const CUnit* unit, const Command& cmd)
 }
 
 
-bool CEventHandler::AllowCommand(const CUnit* unit, const Command& cmd, bool fromSynced)
+bool CEventHandler::AllowCommand(const CUnit* unit, const Command& cmd, int playerNum, bool fromSynced, bool fromLua)
 {
-	return ControlIterateDefTrue(listAllowCommand, &CEventClient::AllowCommand, unit, cmd, fromSynced);
+	return ControlIterateDefTrue(listAllowCommand, &CEventClient::AllowCommand, unit, cmd, playerNum, fromSynced, fromLua);
 }
 
 
@@ -290,6 +290,11 @@ bool CEventHandler::AllowUnitCloak(const CUnit* unit, const CUnit* enemy)
 bool CEventHandler::AllowUnitDecloak(const CUnit* unit, const CSolidObject* object, const CWeapon* weapon)
 {
 	return ControlIterateDefTrue(listAllowUnitDecloak, &CEventClient::AllowUnitDecloak, unit, object, weapon);
+}
+
+bool CEventHandler::AllowUnitKamikaze(const CUnit* unit, const CUnit* target, bool allowed)
+{
+	return ControlIterateDefTrue(listAllowUnitKamikaze, &CEventClient::AllowUnitKamikaze, unit, target, allowed);
 }
 
 
@@ -550,9 +555,9 @@ void CEventHandler::UnitHarvestStorageFull(const CUnit* unit)
 /******************************************************************************/
 /******************************************************************************/
 
-void CEventHandler::CollectGarbage()
+void CEventHandler::CollectGarbage(bool forced)
 {
-	ITERATE_EVENTCLIENTLIST_NA(CollectGarbage);
+	ITERATE_EVENTCLIENTLIST(CollectGarbage, forced);
 }
 
 void CEventHandler::DbgTimingInfo(DbgTimingInfoType type, const spring_time start, const spring_time end)
@@ -619,6 +624,7 @@ DRAW_CALLIN(WorldShadow)
 DRAW_CALLIN(WorldReflection)
 DRAW_CALLIN(WorldRefraction)
 DRAW_CALLIN(GroundPreForward)
+DRAW_CALLIN(GroundPostForward)
 DRAW_CALLIN(GroundPreDeferred)
 DRAW_CALLIN(GroundPostDeferred)
 DRAW_CALLIN(UnitsPostDeferred)
@@ -650,6 +656,7 @@ DRAW_ENTITY_CALLIN(Unit, (const CUnit* unit), (unit))
 DRAW_ENTITY_CALLIN(Feature, (const CFeature* feature), (feature))
 DRAW_ENTITY_CALLIN(Shield, (const CUnit* unit, const CWeapon* weapon), (unit, weapon))
 DRAW_ENTITY_CALLIN(Projectile, (const CProjectile* projectile), (projectile))
+DRAW_ENTITY_CALLIN(Material, (const LuaMaterial* material), (material))
 
 /******************************************************************************/
 /******************************************************************************/

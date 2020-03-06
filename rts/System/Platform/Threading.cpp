@@ -29,21 +29,12 @@
 
 
 namespace Threading {
-	enum {
-		THREAD_IDX_MAIN = 0,
-		THREAD_IDX_LOAD = 1,
-		THREAD_IDX_SND  = 2,
-		THREAD_IDX_VFSI = 3,
-		THREAD_IDX_WDOG = 4,
-		THREAD_IDX_LAST = 5,
-	};
+#ifndef WIN32
+	thread_local std::shared_ptr<ThreadControls> localThreadControls;
+#endif
 
-	static bool cachedThreadIDs[THREAD_IDX_LAST] = {false, false, false, false, false};
 	static NativeThreadId nativeThreadIDs[THREAD_IDX_LAST] = {};
-
 	static Error threadError;
-
-	thread_local std::shared_ptr<Threading::ThreadControls> threadCtls;
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #elif defined(WIN32)
@@ -84,9 +75,8 @@ namespace Threading {
 		const int numCPUs = std::min(CPU_COUNT(cpuSet), 32);
 
 		for (int n = numCPUs - 1; n >= 0; --n) {
-			if (CPU_ISSET(n, cpuSet)) {
+			if (CPU_ISSET(n, cpuSet))
 				coreMask |= (1 << n);
-			}
 		}
 
 		return coreMask;
@@ -98,9 +88,8 @@ namespace Threading {
 		const int numCPUs = std::min(CPU_COUNT(cpuSrcSet), 32);
 
 		for (int n = numCPUs - 1; n >= 0; --n) {
-			if ((coreMask & (1 << n)) != 0) {
+			if ((coreMask & (1 << n)) != 0)
 				CPU_SET(n, cpuDstSet);
-			}
 		}
 
 		CPU_AND(cpuDstSet, cpuDstSet, cpuSrcSet);
@@ -169,20 +158,23 @@ namespace Threading {
 	#endif
 	}
 
-	void SetAffinityHelper(const char *threadName, std::uint32_t affinity) {
-		const std::uint32_t cpuMask  = Threading::SetAffinity(affinity);
+	void SetAffinityHelper(const char* threadName, std::uint32_t affinity) {
+		const std::uint32_t cpuMask = Threading::SetAffinity(affinity);
+
 		if (cpuMask == ~0u) {
 			LOG("[Threading] %s thread CPU affinity not set", threadName);
+			return;
 		}
-		else if (cpuMask != affinity) {
+		if (cpuMask != affinity) {
 			LOG("[Threading] %s thread CPU affinity mask set: %d (config is %d)", threadName, cpuMask, affinity);
+			return;
 		}
-		else if (cpuMask == 0) {
+		if (cpuMask == 0) {
 			LOG_L(L_ERROR, "[Threading] %s thread CPU affinity mask failed: %d", threadName, affinity);
+			return;
 		}
-		else {
-			LOG("[Threading] %s thread CPU affinity mask set: %d", threadName, cpuMask);
-		}
+
+		LOG("[Threading] %s thread CPU affinity mask set: %d", threadName, cpuMask);
 	}
 
 
@@ -278,25 +270,19 @@ namespace Threading {
 	}
 
 
-
-	std::shared_ptr<ThreadControls> GetCurrentThreadControls()
-	{
-		// If there is no object registered, need to return an "empty" shared_ptr
-		if (threadCtls.get() == nullptr)
-			return std::shared_ptr<ThreadControls>();
-
-		return threadCtls;
-	}
+#ifndef WIN32
+	std::shared_ptr<ThreadControls> GetCurrentThreadControls() { return localThreadControls; }
+#endif
 
 
-	spring::thread CreateNewThread(std::function<void()> taskFunc, std::shared_ptr<Threading::ThreadControls>* ppCtlsReturn)
+	spring::thread CreateNewThread(std::function<void()> taskFunc, std::shared_ptr<Threading::ThreadControls>* threadCtls)
 	{
 #ifndef WIN32
 		// only used as locking mechanism, not installed by thread
 		Threading::ThreadControls tempCtls;
 
 		std::unique_lock<spring::mutex> lock(tempCtls.mutSuspend);
-		spring::thread localthread(std::bind(Threading::ThreadStart, taskFunc, ppCtlsReturn, &tempCtls));
+		spring::thread localthread(std::bind(Threading::ThreadStart, taskFunc, threadCtls, &tempCtls));
 
 		// wait so that we know the thread is running and fully initialized before returning
 		tempCtls.condInitialized.wait(lock);
@@ -309,28 +295,37 @@ namespace Threading {
 
 
 
-	static void SetThread(unsigned int threadIndex, bool setControls, bool isLoadThread) {
+	static void SetThreadID(unsigned int threadIndex) {
 		// NOTE:
-		//   the ID's of LOAD and SND always have to be set unconditionally since
-		//   those two threads are joined and respawned when reloading, KISS here
-		//   (while other threads never call Set*Thread more than once making the
-		//   is-cached flags redundant anyway)
-		if (true || !cachedThreadIDs[threadIndex])
-			nativeThreadIDs[threadIndex] = Threading::GetCurrentThreadId();
+		//   LOAD and SND thread ID's always have to be set unconditionally
+		//   (threads are joined and respawned when reloading, so KISS here)
+		//   other threads never call Set*Thread more than once, no need for
+		//   caching
+		nativeThreadIDs[threadIndex] = Threading::GetCurrentThreadId();
 
-		cachedThreadIDs[threadIndex] = true;
-
-		if (!setControls)
-			return;
-
-		SetCurrentThreadControls(isLoadThread);
+		switch (threadIndex) {
+			case THREAD_IDX_LOAD: {
+				// do nothing if Load is actually Main (LoadingMT=0 case)
+				if (IsMainThread())
+					return;
+			} break;
+			#ifndef WIN32
+			// both heartBeatThread and soundThread make use of CreateNewThread -> ThreadStart
+			// other threads under the eye of watchdog have their control structure setup here
+			case THREAD_IDX_SND : { return; } break;
+			#endif
+			case THREAD_IDX_WDOG: { return; } break;
+		}
+	#ifndef WIN32
+		SetupCurrentThreadControls(localThreadControls);
+	#endif
 	}
 
-	void     SetMainThread() { SetThread(THREAD_IDX_MAIN,  true, false); }
-	void SetGameLoadThread() { SetThread(THREAD_IDX_LOAD,  true,  true); }
-	void    SetAudioThread() { SetThread(THREAD_IDX_SND ,  true, false); }
-	void  SetFileSysThread() { SetThread(THREAD_IDX_VFSI,  true, false); }
-	void SetWatchDogThread() { SetThread(THREAD_IDX_WDOG, false, false); }
+	void     SetMainThread() { SetThreadID(THREAD_IDX_MAIN); }
+	void SetGameLoadThread() { SetThreadID(THREAD_IDX_LOAD); }
+	void    SetAudioThread() { SetThreadID(THREAD_IDX_SND ); }
+	void  SetFileSysThread() { SetThreadID(THREAD_IDX_VFSI); }
+	void SetWatchDogThread() { SetThreadID(THREAD_IDX_WDOG); }
 
 	bool IsMainThread(NativeThreadId threadID) { return NativeThreadIdsEqual(threadID, nativeThreadIDs[THREAD_IDX_MAIN]); }
 	bool IsMainThread(                       ) { return IsMainThread(Threading::GetCurrentThreadId()); }
@@ -381,7 +376,7 @@ namespace Threading {
 	}
 
 	// NB: no protection against two threads posting at the same time
-	void SetThreadError(Error&& err) { threadError = std::move(err); }
-	Error* GetThreadError() { return &threadError; }
+	const Error* GetThreadErrorC() { return &threadError; }
+	      Error* GetThreadErrorM() { return &threadError; }
 }
 

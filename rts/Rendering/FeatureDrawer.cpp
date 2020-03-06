@@ -16,7 +16,6 @@
 #include "Rendering/Env/IWater.h"
 #include "Rendering/GL/glExtra.h"
 #include "Rendering/GL/myGL.h"
-#include "Rendering/GL/VertexArray.h"
 #include "Rendering/LuaObjectDrawer.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/Shaders/Shader.h"
@@ -30,7 +29,7 @@
 #include "System/Config/ConfigHandler.h"
 #include "System/ContainerUtil.h"
 #include "System/EventHandler.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/SafeUtil.h"
 
 #define DRAW_QUAD_SIZE 32
@@ -62,45 +61,33 @@ static bool SetFeatureDrawAlpha(
 	float sqFadeDistMin = -1.0f,
 	float sqFadeDistMax = -1.0f
 ) {
-	// always reset
-	f->drawAlpha = 0.0f;
-
+	// always reset outside ::Draw
 	if (cam == nullptr)
+		return (f->drawAlpha = 0.0f, false);
+
+	const float sqrCamDist = (f->pos - cam->GetPos()).SqLength();
+	const float farTexDist = Square(f->GetDrawRadius() * unitDrawer->unitDrawDist);
+
+	// first test if feature should be rendered as a fartex
+	if (sqrCamDist >= farTexDist)
 		return false;
 
 	// special case for non-fading features
-	if (!f->alphaFade) {
-		f->drawAlpha = 1.0f;
-		return true;
-	}
+	if (!f->alphaFade)
+		return (f->drawAlpha = 1.0f, true);
 
-	const float sqDist = (f->pos - cam->GetPos()).SqLength();
-	const float farLength = f->sqRadius * unitDrawer->unitDrawDistSqr;
+	const float sqFadeDistBeg = mix(sqFadeDistMin, farTexDist * (sqFadeDistMin / sqFadeDistMax), (farTexDist < sqFadeDistMax));
+	const float sqFadeDistEnd = mix(sqFadeDistMax, farTexDist                                  , (farTexDist < sqFadeDistMax));
 
-	// if true, feature will become a fartex
-	if (sqDist >= farLength)
-		return false;
+	// draw feature as normal, no fading
+	if (sqrCamDist < sqFadeDistBeg)
+		return (f->drawAlpha = 1.0f, true);
 
-	float sqFadeDistB = sqFadeDistMin;
-	float sqFadeDistE = sqFadeDistMax;
+	// otherwise save it for the fade-pass
+	if (sqrCamDist < sqFadeDistEnd)
+		return (f->drawAlpha = 1.0f - ((sqrCamDist - sqFadeDistBeg) / (sqFadeDistEnd - sqFadeDistBeg)), true);
 
-	if (farLength < sqFadeDistMax) {
-		sqFadeDistE = farLength;
-		sqFadeDistB = farLength * (sqFadeDistMin / sqFadeDistMax);
-	}
-
-	if (sqDist < sqFadeDistB) {
-		// draw feature as normal, no fading
-		f->drawAlpha = 1.0f;
-		return true;
-	}
-
-	if (sqDist < sqFadeDistE) {
-		// otherwise save it for the fade-pass
-		f->drawAlpha = 1.0f - ((sqDist - sqFadeDistB) / (sqFadeDistE - sqFadeDistB));
-		return true;
-	}
-
+	// do not draw at all, fully faded
 	return false;
 }
 
@@ -126,6 +113,7 @@ void CFeatureDrawer::KillStatic(bool reload) {
 void CFeatureDrawer::Init()
 {
 	eventHandler.AddClient(this);
+	configHandler->NotifyOnChange(this, {"FeatureDrawDistance", "FeatureFadeDistance"});
 
 	LuaObjectDrawer::ReadLODScales(LUAOBJ_FEATURE);
 
@@ -153,14 +141,15 @@ void CFeatureDrawer::Init()
 		(p.GetRenderer(MODELTYPE_ASS)).Init();
 	}
 
-	for (unsigned int n = 0; n < camVisibleQuads.size(); n++) {
-		camVisibleQuads[n].clear();
-		camVisibleQuads[n].reserve(256);
+	for (auto& camVisibleQuad: camVisibleQuads) {
+		camVisibleQuad.clear();
+		camVisibleQuad.reserve(256);
 	}
 }
 
 void CFeatureDrawer::Kill()
 {
+	configHandler->RemoveObserver(this);
 	eventHandler.RemoveClient(this);
 	autoLinkedEvents.clear();
 
@@ -178,6 +167,26 @@ void CFeatureDrawer::Kill()
 }
 
 
+void CFeatureDrawer::ConfigNotify(const std::string& key, const std::string& value)
+{
+	switch (hashStringLower(key.c_str())) {
+		case hashStringLower("FeatureDrawDistance"): {
+			featureDrawDistance = std::strtof(value.c_str(), nullptr);
+		} break;
+		case hashStringLower("FeatureFadeDistance"): {
+			featureFadeDistance = std::strtof(value.c_str(), nullptr);
+		} break;
+		default: {
+		} break;
+	}
+
+	featureDrawDistance = std::max(               0.0f, featureDrawDistance);
+	featureFadeDistance = std::max(               0.0f, featureFadeDistance);
+	featureFadeDistance = std::min(featureDrawDistance, featureFadeDistance);
+
+	LOG_L(L_INFO, "[FeatureDrawer::%s] {draw,fade}distance set to {%f,%f}", __func__, featureDrawDistance, featureFadeDistance);
+}
+
 
 void CFeatureDrawer::RenderFeatureCreated(const CFeature* feature)
 {
@@ -185,9 +194,6 @@ void CFeatureDrawer::RenderFeatureCreated(const CFeature* feature)
 		return;
 
 	CFeature* f = const_cast<CFeature*>(feature);
-
-	// otherwise UpdateDrawQuad returns early
-	f->drawQuad = -1;
 
 	SetFeatureDrawAlpha(f, nullptr);
 	UpdateDrawQuad(f);
@@ -201,13 +207,11 @@ void CFeatureDrawer::RenderFeatureDestroyed(const CFeature* feature)
 {
 	CFeature* f = const_cast<CFeature*>(feature);
 
-	if (f->def->drawType == DRAWTYPE_MODEL) {
+	if (f->def->drawType == DRAWTYPE_MODEL)
 		spring::VectorErase(unsortedFeatures, f);
-	}
-	if (f->model != nullptr && f->drawQuad >= 0) {
+
+	if (f->model != nullptr && f->drawQuad >= 0)
 		modelRenderers[f->drawQuad].GetRenderer(MDL_TYPE(f)).DelObject(f);
-		f->drawQuad = -1;
-	}
 
 	LuaObjectDrawer::SetObjectLOD(f, LUAOBJ_FEATURE, 0);
 }
@@ -220,14 +224,10 @@ void CFeatureDrawer::FeatureMoved(const CFeature* feature, const float3& oldpos)
 
 void CFeatureDrawer::UpdateDrawQuad(CFeature* feature)
 {
-	const int oldDrawQuad = feature->drawQuad;
-
-	if (oldDrawQuad < -1)
-		return;
-
 	const int newDrawQuadX = Clamp(int(feature->pos.x / SQUARE_SIZE / DRAW_QUAD_SIZE), 0, drawQuadsX - 1);
 	const int newDrawQuadY = Clamp(int(feature->pos.z / SQUARE_SIZE / DRAW_QUAD_SIZE), 0, drawQuadsY - 1);
-	const int newDrawQuad = newDrawQuadY * drawQuadsX + newDrawQuadX;
+	const int newDrawQuad  = newDrawQuadY * drawQuadsX + newDrawQuadX;
+	const int oldDrawQuad  = feature->drawQuad;
 
 	if (oldDrawQuad == newDrawQuad)
 		return;
@@ -315,7 +315,7 @@ void CFeatureDrawer::DrawOpaqueFeatures(int modelType)
 		for (unsigned int i = 0, n = mdlRenderer.GetNumObjectBins(); i < n; i++) {
 			CUnitDrawer::BindModelTypeTexture(modelType, mdlRenderer.GetObjectBinKey(i));
 
-			for (CFeature* f: mdlRenderer.GetObjectBin(mdlRenderer.GetObjectBinKey(i))) {
+			for (CFeature* f: mdlRenderer.GetObjectBin(i)) {
 				// fartex, opaque, shadow are allowed here
 				switch (f->drawFlag) {
 					case CFeature::FD_NODRAW_FLAG: {                              continue; } break;
@@ -485,7 +485,7 @@ void CFeatureDrawer::DrawAlphaFeatures(int modelType)
 		for (unsigned int i = 0, n = mdlRenderer.GetNumObjectBins(); i < n; i++) {
 			CUnitDrawer::BindModelTypeTexture(modelType, mdlRenderer.GetObjectBinKey(i));
 
-			for (CFeature* f: mdlRenderer.GetObjectBin(mdlRenderer.GetObjectBinKey(i))) {
+			for (CFeature* f: mdlRenderer.GetObjectBin(i)) {
 				// only alpha is allowed here
 				switch (f->drawFlag) {
 					case CFeature::FD_NODRAW_FLAG: { continue; } break;
@@ -502,12 +502,13 @@ void CFeatureDrawer::DrawAlphaFeatures(int modelType)
 					continue;
 
 				unitDrawer->SetTeamColour(f->team, float2(f->drawAlpha, 1.0f));
-
-				glAttribStatePtr->AlphaFunc(GL_GREATER, f->drawAlpha * 0.5f);
+				unitDrawer->SetAlphaTest({f->drawAlpha * 0.5f, 1.0f, 0.0f, 0.0f}); // test > (alpha/2)
 				DrawFeatureDefTrans(f, false, false);
 			}
 		}
 	}
+
+	unitDrawer->SetAlphaTest({0.0f, 0.0f, 0.0f, 1.0f}); // no test
 }
 
 
@@ -538,10 +539,8 @@ void CFeatureDrawer::DrawShadowPass()
 		// (we are just interested in the 255 alpha here)
 		glBindTexture(GL_TEXTURE_2D, 0);
 
-		// need the alpha-mask for transparent features
+		// need the alpha-mask for transparent features; threshold set in ShadowHandler
 		glAttribStatePtr->PushColorBufferBit();
-		glAttribStatePtr->EnableAlphaTest();
-		glAttribStatePtr->AlphaFunc(GL_GREATER, 0.5f);
 
 		// 3DO's have clockwise-wound faces and
 		// (usually) holes, so disable backface
@@ -572,9 +571,9 @@ class CFeatureQuadDrawer : public CReadMap::IQuadDrawer {
 public:
 	CFeatureQuadDrawer(int _numQuadsX): numQuadsX(_numQuadsX) {}
 
-	void ResetState() { numQuadsX = 0; }
+	void ResetState() override { numQuadsX = 0; }
 
-	void DrawQuad(int x, int y) {
+	void DrawQuad(int x, int y) override {
 		camQuads.push_back(y * numQuadsX + x);
 
 		// used so we do not iterate over non-visited renderers (in any pass)
@@ -615,11 +614,11 @@ void CFeatureDrawer::FlagVisibleFeatures(
 			// const auto& featureBinKeys = mdlRenderer.GetObjectBinKeys();
 
 			for (unsigned int j = 0, n = mdlRenderer.GetNumObjectBins(); j < n; j++) {
-				for (CFeature* f: mdlRenderer.GetObjectBin(mdlRenderer.GetObjectBinKey(j))) {
+				for (CFeature* f: mdlRenderer.GetObjectBin(j)) {
 					assert(quad == f->drawQuad);
 
 					// clear marker; will be set at most once below
-					f->drawFlag = CFeature::FD_NODRAW_FLAG;
+					f->SetDrawFlag(CFeature::FD_NODRAW_FLAG);
 
 					if (f->noDraw)
 						continue;
@@ -636,7 +635,7 @@ void CFeatureDrawer::FlagVisibleFeatures(
 						if (SetFeatureDrawAlpha(f, playerCam, sqFadeDistBegin, sqFadeDistEnd)) {
 							// no shadows for fully alpha-faded features from player's POV
 							f->UpdateTransform(f->drawPos, false);
-							f->drawFlag = CFeature::FD_SHADOW_FLAG;
+							f->SetDrawFlag(CFeature::FD_SHADOW_FLAG);
 						}
 						continue;
 					}
@@ -650,15 +649,14 @@ void CFeatureDrawer::FlagVisibleFeatures(
 
 					if (SetFeatureDrawAlpha(f, cam, sqFadeDistBegin, sqFadeDistEnd)) {
 						f->UpdateTransform(f->drawPos, false);
-						f->drawFlag += (CFeature::FD_OPAQUE_FLAG * (f->drawAlpha == 1.0f));
-						f->drawFlag += (CFeature::FD_ALPHAF_FLAG * (f->drawAlpha <  1.0f));
+						f->SetDrawFlag(mix(int(CFeature::FD_OPAQUE_FLAG), int(CFeature::FD_ALPHAF_FLAG), f->drawAlpha < 1.0f));
 						continue;
 					}
 
 					// note: it looks pretty bad to first alpha-fade and then
 					// draw a fully *opaque* fartex, so restrict impostors to
 					// non-fading features
-					f->drawFlag = CFeature::FD_FARTEX_FLAG * drawFarFeatures * (!f->alphaFade);
+					f->SetDrawFlag(CFeature::FD_FARTEX_FLAG * drawFarFeatures * (!f->alphaFade));
 				}
 			}
 		}

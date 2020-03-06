@@ -11,6 +11,7 @@
 #include <string>
 #include <functional>
 
+#include "System/SpringExitCode.h"
 #include "System/Log/ILog.h"
 #include "System/Log/LogSinkHandler.h"
 #include "System/Threading/SpringThreading.h"
@@ -30,26 +31,25 @@
 
 static void ExitSpringProcessAux(bool waitForExit, bool exitSuccess)
 {
-	// wait 10 seconds before forcing the kill
-	for (unsigned int n = 0; (waitForExit && n < 10); ++n) {
-		spring::this_thread::sleep_for(std::chrono::seconds(1));
-	}
+	// wait a bit before forcing the kill
+	if (waitForExit)
+		spring::this_thread::sleep_for(std::chrono::seconds(5));
 
 	logSinkHandler.SetSinking(false);
 
 #ifdef _MSC_VER
 	if (!exitSuccess)
-		TerminateProcess(GetCurrentProcess(), EXIT_FAILURE);
+		TerminateProcess(GetCurrentProcess(), spring::EXIT_CODE_CRASHED);
 #endif
 
-	exit(EXIT_FAILURE);
+	exit(spring::EXIT_CODE_CRASHED);
 }
 
 
 #ifdef DEDICATED
-static void ExitSpringProcess(const std::string& msg, const std::string& caption, unsigned int flags)
+static void ExitSpringProcess(const char* msg, const char* caption, unsigned int flags)
 {
-	LOG_L(L_ERROR, "[%s] errorMsg=\"%s\" msgCaption=\"%s\"", __func__, msg.c_str(), caption.c_str());
+	LOG_L(L_ERROR, "[%s] errorMsg=\"%s\" msgCaption=\"%s\"", __func__, msg, caption);
 
 	spring::SafeDelete(gameServer);
 	ExitSpringProcessAux(false, true);
@@ -57,9 +57,9 @@ static void ExitSpringProcess(const std::string& msg, const std::string& caption
 
 #else
 
-static void ExitSpringProcess(const std::string& msg, const std::string& caption, unsigned int flags)
+static void ExitSpringProcess(const char* msg, const char* caption, unsigned int flags)
 {
-	LOG_L(L_ERROR, "[%s] errorMsg=\"%s\" msgCaption=\"%s\" mainThread=%d", __func__, msg.c_str(), caption.c_str(), Threading::IsMainThread());
+	LOG_L(L_ERROR, "[%s] errorMsg=\"%s\" msgCaption=\"%s\" mainThread=%d", __func__, msg, caption, Threading::IsMainThread());
 
 	switch (SpringApp::PostKill(Threading::Error(caption, msg, flags))) {
 		case -1: {
@@ -82,7 +82,7 @@ static void ExitSpringProcess(const std::string& msg, const std::string& caption
 #endif
 
 
-void ErrorMessageBox(const std::string& msg, const std::string& caption, unsigned int flags)
+void ErrorMessageBox(const char* msg, const char* caption, unsigned int flags)
 {
 	#if (!defined(DEDICATED) && !defined(HEADLESS))
 	if (Threading::IsMainThread()) {

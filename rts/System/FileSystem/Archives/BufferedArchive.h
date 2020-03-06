@@ -14,18 +14,17 @@ class CBufferedArchive : public IArchive
 {
 public:
 	CBufferedArchive(const std::string& name, bool cached = true): IArchive(name) {
-		if ((noCache = !cached))
-			return;
-
-		cache.resize(1024);
+		noCache = !cached;
 	}
 
 	virtual ~CBufferedArchive();
 
+	virtual int GetType() const override { return ARCHIVE_TYPE_BUF; }
+
 	bool GetFile(unsigned int fid, std::vector<std::uint8_t>& buffer) override;
 
 protected:
-	virtual bool GetFileImpl(unsigned int fid, std::vector<std::uint8_t>& buffer) = 0;
+	virtual int GetFileImpl(unsigned int fid, std::vector<std::uint8_t>& buffer) = 0;
 
 	struct FileBuffer {
 		FileBuffer() = default;
@@ -33,13 +32,7 @@ protected:
 		FileBuffer(FileBuffer&& fb) { *this = std::move(fb); }
 
 		FileBuffer& operator = (const FileBuffer& fb) = delete;
-		FileBuffer& operator = (FileBuffer&& fb) {
-			populated = fb.populated;
-			exists = fb.exists;
-
-			data = std::move(fb.data);
-			return *this;
-		}
+		FileBuffer& operator = (FileBuffer&& fb) = default;
 
 		bool populated = false; // files may be empty (0 bytes)
 		bool exists = false;
@@ -48,12 +41,12 @@ protected:
 	};
 
 	// indexed by file-id
-	std::vector<FileBuffer> cache;
-	// neither 7zip (.sd7) nor minizip (.sdz) are threadsafe
+	std::vector<FileBuffer> fileCache;
+	// neither 7zip (.sd7) nor minizip (.sdz) are thread-safe
 	// zlib (used to extract pool archive .gz entries) should
 	// not need this, but currently each buffered GetFileImpl
 	// call is protected
-	spring::mutex archiveLock;
+	static spring::mutex archiveLock;
 
 private:
 	uint32_t cacheSize = 0;

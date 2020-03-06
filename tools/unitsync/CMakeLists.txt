@@ -15,6 +15,7 @@ list(APPEND unitsync_libs ${ZLIB_LIBRARY})
 list(APPEND unitsync_libs ${SPRING_MINIZIP_LIBRARY})
 
 if (WIN32)
+	list(APPEND unitsync_libs ${IPHLPAPI_LIBRARY})
 	list(APPEND unitsync_libs ${WINMM_LIBRARY})
 endif (WIN32)
 
@@ -32,8 +33,10 @@ endif (MINGW OR MSVC)
 
 
 add_definitions(-DUNITSYNC)
-add_definitions(-fPIC)
-add_definitions(${PIC_FLAG})
+if (NOT WIN32)
+	add_definitions(-fPIC)
+	add_definitions(${PIC_FLAG})
+endif()
 add_definitions(-DNOT_USING_CREG)
 add_definitions(-DHEADLESS)
 add_definitions(-DNO_SOUND)

@@ -31,9 +31,8 @@
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/Weapon.h"
 #include "System/StringUtil.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/Sound/ISoundChannels.h"
-#include "System/Sync/SyncTracer.h"
 
 
 /******************************************************************************/
@@ -77,7 +76,17 @@ void CCobInstance::Init()
 void CCobInstance::PostLoad()
 {
 	assert(unit != nullptr);
+	assert(cobFile == nullptr);
+
 	cobFile = cobFileHandler->GetCobFile(unit->unitDef->scriptName);
+
+	for (int threadID: threadIDs) {
+		CCobThread* t = cobEngine->GetThread(threadID);
+
+		t->cobInst = this;
+		t->cobFile = cobFile;
+	}
+
 	Init();
 }
 

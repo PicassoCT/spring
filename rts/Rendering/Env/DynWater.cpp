@@ -50,8 +50,6 @@ CDynWater::CDynWater()
 	: camPosX(0)
 	, camPosZ(0)
 {
-	assert(FBO::IsSupported());
-
 	lastWaveFrame = 0;
 	firstDraw = true;
 	camPosBig = float3(2048, 0, 2048);
@@ -1277,8 +1275,8 @@ void CDynWater::DrawOuterSurface()
 
 #else
 
-CDynWater::CDynWater() {}
-CDynWater::~CDynWater() {}
+CDynWater::CDynWater() = default;
+CDynWater::~CDynWater() = default;
 
 void CDynWater::Draw() {}
 void CDynWater::UpdateWater(CGame* game) {}

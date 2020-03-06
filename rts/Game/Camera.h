@@ -77,16 +77,28 @@ public:
 		float maxz = 0.0f;
 	};
 
+	struct UpdateParams {
+		bool updateDirs;
+		bool updateMats;
+		bool updateFrustum;
+		bool updateViewPort;
+		bool updateViewRange;
+	};
+
 public:
 	CCamera(unsigned int cameraType = CAMTYPE_PLAYER, unsigned int projectionType = PROJTYPE_PERSP);
 
 	void CopyState(const CCamera*);
 	void CopyStateReflect(const CCamera*);
-	void Update(bool updateDirs = true, bool updateMats = true, bool updatePort = true);
+
+	void Update(const UpdateParams& p);
+	void Update(bool updateDirs = true, bool updateMats = true, bool updateViewPort = true, bool updateViewRange = true) {
+		Update({updateDirs, updateMats, true, updateViewPort, updateViewRange});
+	}
 
 	/// @param fov in degree
 	void SetPos(const float3& p) { pos = p; }
-	void SetDir(const float3 dir);
+	void SetDir(const float3& dir);
 
 	const float3& GetPos() const { return pos; }
 	const float3& GetDir() const { return forward; }
@@ -96,7 +108,7 @@ public:
 	const float3& GetUp() const      { return up; }
 	const float3& GetRot() const     { return rot; }
 
-	void SetRot(const float3 r) { UpdateDirsFromRot(rot = r); }
+	void SetRot(const float3& r) { UpdateDirsFromRot(rot = r); }
 	void SetRotX(const float x) { SetRot(float3(    x, rot.y, rot.z)); }
 	void SetRotY(const float y) { SetRot(float3(rot.x,     y, rot.z)); }
 	void SetRotZ(const float z) { SetRot(float3(rot.x, rot.y,     z)); }
@@ -149,11 +161,11 @@ public:
 	const float3& GetFrustumPlane(unsigned int i) const { return frustum.planes[i]; }
 	const float3& GetFrustumEdge (unsigned int i) const { return frustum.edges [i]; }
 
-	void LoadMatrices() const;
 	void LoadViewPort() const;
 	void UpdateLoadViewPort(int px, int py, int sx, int sy);
 
-	void SetVFOV(const float angle);
+	void SetVFOV(float angle);
+	void SetAspectRatio(float ar) { aspectRatio = ar; }
 
 	float GetVFOV() const { return fov; }
 	float GetHFOV() const;
@@ -162,6 +174,7 @@ public:
 	float GetLPPScale() const { return lppScale; }
 	float GetNearPlaneDist() const { return frustum.scales.z; }
 	float GetFarPlaneDist() const { return frustum.scales.w; }
+	float GetAspectRatio() const { return aspectRatio; }
 
 	float3 GetMoveVectorFromState(bool fromKeyState) const;
 
@@ -173,16 +186,16 @@ public:
 	static CCamera* GetActive();
 
 	static float3 GetRotFromDir(float3 fwd);
-	static float3 GetFwdFromRot(const float3 r);
-	static float3 GetRgtFromRot(const float3 r);
+	static float3 GetFwdFromRot(const float3& r);
+	static float3 GetRgtFromRot(const float3& r);
 
 
-	float ProjectedDistance(const float3 objPos) const {
+	float ProjectedDistance(const float3& objPos) const {
 		return (forward.dot(objPos - pos));
 	}
 
 	/*
-	float ProjectedDistanceShadow(const float3 objPos, const float3 sunDir) const {
+	float ProjectedDistanceShadow(const float3& objPos, const float3& sunDir) const {
 		// FIXME: fix it, cap it for shallow shadows?
 		const float3 diff = pos - objPos;
 		const float  dot  = diff.dot(sunDir);
@@ -207,7 +220,7 @@ private:
 	void glOrthoScaledSpring(const float sx, const float sy, const float zn, const float zf);
 	void gluLookAtSpring(const float3&, const float3&, const float3&);
 
-	void UpdateDirsFromRot(const float3 r);
+	void UpdateDirsFromRot(const float3& r);
 
 public:
 	float3 pos;
@@ -220,10 +233,11 @@ public:
 	float3 posOffset;
 	float3 tiltOffset;
 
-	float fov        = 0.0f;  ///< vertical viewing angle, in degrees
-	float halfFov    = 0.0f;  ///< half the fov in radians
-	float tanHalfFov = 0.0f;  ///< math::tan(halfFov)
-	float lppScale   = 0.0f;  ///< length-per-pixel scale
+	float fov         = 0.0f;  ///< vertical viewing angle, in degrees
+	float halfFov     = 0.0f;  ///< half the fov in radians
+	float tanHalfFov  = 0.0f;  ///< math::tan(halfFov)
+	float lppScale    = 0.0f;  ///< length-per-pixel scale
+	float aspectRatio = 1.0f;  ///< horizontal
 
 	int viewport[4];
 

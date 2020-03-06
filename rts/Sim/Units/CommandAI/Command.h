@@ -37,7 +37,6 @@
 #define CMD_SETBASE               55
 #define CMD_INTERNAL              60
 #define CMD_SELFD                 65
-#define CMD_SET_WANTED_MAX_SPEED  70
 #define CMD_LOAD_UNITS            75
 #define CMD_LOAD_ONTO             76
 #define CMD_UNLOAD_UNITS          80
@@ -347,6 +346,10 @@ public:
 		return IsBuildCommand();
 	}
 
+	bool IsAttackCommand() const {
+		return (GetID() == CMD_ATTACK || GetID() == CMD_AREA_ATTACK || GetID() == CMD_FIGHT);
+	}
+
 	bool IsAreaCommand() const {
 		switch (GetID()) {
 			case CMD_CAPTURE:
@@ -370,6 +373,7 @@ public:
 	bool IsBuildCommand() const { return (GetID() < 0); }
 	bool IsEmptyCommand() const { return (numParams == 0); }
 	bool IsPooledCommand() const { return (pageIndex != -1u); } // implies numParams > MAX_COMMAND_PARAMS
+	bool IsInternalOrder() const { return ((options & INTERNAL_ORDER) != 0); }
 
 	int GetID(bool idx = false) const { return id[idx]; }
 	int GetTimeOut() const { return timeOut; }
@@ -429,8 +433,8 @@ private:
 
 	/**
 	 * Remove this command after this frame (absolute).
-	 * This can only be set locally and is not sent over the network.
-	 * (used for temporary orders)
+	 * Mostly used for internal temporary orders, also
+	 * exposed to Lua.
 	 * Examples:
 	 * - 0
 	 * - MAX_INT

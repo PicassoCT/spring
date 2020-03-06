@@ -14,6 +14,7 @@
 #include "Sim/Misc/TeamHandler.h"
 #include "Sim/MoveTypes/AAirMoveType.h"
 #include "Sim/MoveTypes/HoverAirMoveType.h"
+#include "Sim/MoveTypes/MoveDefHandler.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
@@ -22,20 +23,11 @@
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/Log/ILog.h"
 #include "System/EventHandler.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/StringUtil.h"
 #include <assert.h>
 
 #define AUTO_GENERATE_ATTACK_ORDERS 1
-#define BUGGER_OFF_TTL 200
-#define MAX_CLOSE_IN_RETRY_TICKS 30
-#define MAX_USERGOAL_TOLERANCE_DIST 100.0f
-
-#define AIRTRANSPORT_DOCKING_RADIUS 16
-#define AIRTRANSPORT_DOCKING_ANGLE 50
-#define UNLOAD_LAND 0
-#define UNLOAD_DROP 1
-#define UNLOAD_LANDFLOOD 2
 
 // MobileCAI is not always assigned to aircraft
 static AAirMoveType* GetAirMoveType(const CUnit* owner) {
@@ -82,6 +74,7 @@ CR_REG_METADATA(CMobileCAI, (
 	CR_MEMBER(lastCommandFrame),
 	CR_MEMBER(lastCloseInTry),
 	CR_MEMBER(lastBuggerOffTime),
+	CR_MEMBER(numNonMovingCalls),
 	CR_MEMBER(lastIdleCheck)
 ))
 
@@ -96,14 +89,7 @@ CMobileCAI::CMobileCAI():
 
 	tempOrder(false),
 	slowGuard(false),
-	moveDir(gsRNG.NextFloat() > 0.5f),
-
-	cancelDistance(1024),
-
-	lastCommandFrame(-1),
-	lastCloseInTry(-1),
-	lastBuggerOffTime(-BUGGER_OFF_TTL),
-	lastIdleCheck(0)
+	moveDir(gsRNG.NextFloat() > 0.5f)
 {}
 
 
@@ -118,14 +104,7 @@ CMobileCAI::CMobileCAI(CUnit* owner):
 
 	tempOrder(false),
 	slowGuard(false),
-	moveDir(gsRNG.NextFloat() > 0.5f),
-
-	cancelDistance(1024),
-
-	lastCommandFrame(-1),
-	lastCloseInTry(-1),
-	lastBuggerOffTime(-BUGGER_OFF_TTL),
-	lastIdleCheck(0)
+	moveDir(gsRNG.NextFloat() > 0.5f)
 {
 	CalculateCancelDistance();
 
@@ -311,10 +290,7 @@ void CMobileCAI::GiveCommandReal(const Command& c, bool fromSynced)
 				return;
 
 			// toggle between the "land" and "fly" idle-modes
-			switch ((int) c.GetParam(0)) {
-				case 0: { airMT->autoLand = false; break; }
-				case 1: { airMT->autoLand =  true; break; }
-			}
+			airMT->autoLand = (int(c.GetParam(0)) == 1);
 
 			if (!airMT->owner->beingBuilt) {
 				if (!airMT->autoLand)
@@ -336,12 +312,11 @@ void CMobileCAI::GiveCommandReal(const Command& c, bool fromSynced)
 		}
 	}
 
-	// CMD_SWMS is non-queueing but should never cancel
-	// temporary (i.e. auto-generated) attack commands
-	const bool nonQueuedCmd = ((c.GetOpts() & SHIFT_KEY) == 0);
-	const bool canCancelTmp = (c.GetID() != CMD_SET_WANTED_MAX_SPEED);
+	// directly issued queueing commands always cancel temporary (i.e. auto-generated attack) orders
+	const bool directCmd = ((c.GetOpts() & SHIFT_KEY) == 0);
+	const bool queingCmd = (nonQueingCommands.find(c.GetID()) == nonQueingCommands.end());
 
-	if (nonQueuedCmd && canCancelTmp && nonQueingCommands.find(c.GetID()) == nonQueingCommands.end()) {
+	if (directCmd && queingCmd) {
 		tempOrder = false;
 
 		SetTransportee(nullptr);
@@ -371,9 +346,6 @@ void CMobileCAI::SlowUpdate()
 	}
 
 	// when slow-guarding, regulate speed through {Start,Stop}SlowGuard
-	if (!slowGuard)
-		SlowUpdateMaxSpeed();
-
 	Execute();
 }
 
@@ -385,7 +357,6 @@ void CMobileCAI::Execute()
 	Command& c = commandQue.front();
 
 	switch (c.GetID()) {
-		case CMD_SET_WANTED_MAX_SPEED: { ExecuteSetWantedMaxSpeed(c);	return; }
 		case CMD_MOVE:                 { ExecuteMove(c);				return; }
 		case CMD_PATROL:               { ExecutePatrol(c);				return; }
 		case CMD_FIGHT:                { ExecuteFight(c);				return; }
@@ -402,22 +373,6 @@ void CMobileCAI::Execute()
 	}
 
 	CCommandAI::SlowUpdate();
-}
-
-/**
-* @brief executes the SWMS command
-*/
-void CMobileCAI::ExecuteSetWantedMaxSpeed(Command& c)
-{
-	const Command& backCmd = (commandQue.size() >= 2)? commandQue.back(): c;
-
-	// CMD_SWMS is not repeatable
-	if (repeatOrders && backCmd.GetID() != CMD_SET_WANTED_MAX_SPEED)
-		commandQue.push_back(commandQue.front());
-
-	FinishCommand();
-	SlowUpdate();
-	return;
 }
 
 /**
@@ -452,8 +407,10 @@ void CMobileCAI::ExecuteMove(Command& c)
 		return;
 	}
 
-
-	if (sqGoalDist >= cancelDistance || !HasMoreMoveCommands())
+	// bypass cancel-distance check for internal (BUGGER_OFF) move commands
+	// (not for internal CMD_FIGHT's created by ExecutePatrol; these should
+	// get cancelled like regular user fight-commands)
+	if (sqGoalDist >= cancelDistance || (c.IsInternalOrder() && !c.IsAttackCommand()) || !HasMoreMoveCommands())
 		return;
 
 	// fallback
@@ -518,7 +475,7 @@ void CMobileCAI::ExecutePatrol(Command& c)
 */
 void CMobileCAI::ExecuteFight(Command& c)
 {
-	assert((c.GetOpts() & INTERNAL_ORDER) || owner->unitDef->canFight);
+	assert(c.IsInternalOrder() || owner->unitDef->canFight);
 
 	if (c.GetNumParams() == 1 && !owner->weapons.empty()) {
 		CWeapon* w = owner->weapons.front();
@@ -601,7 +558,7 @@ void CMobileCAI::ExecuteFight(Command& c)
 	ExecuteMove(c);
 }
 
-bool CMobileCAI::IsValidTarget(const CUnit* enemy) const {
+bool CMobileCAI::IsValidTarget(const CUnit* enemy, CWeapon* weapon) const {
 	if (enemy == nullptr)
 		return false;
 
@@ -615,15 +572,18 @@ bool CMobileCAI::IsValidTarget(const CUnit* enemy) const {
 	if (enemy->IsNeutral())
 		return false;
 
+	// test if given weapon belonging to owner can target
+	// the enemy unit; indicates an auto-targeting context
+	if (weapon != nullptr)
+		return (weapon->TestTarget(enemy->pos, {enemy}) && (owner->moveState != MOVESTATE_HOLDPOS || weapon->TryTargetRotate(enemy, false, false)));
+
+	// test if any of owner's weapons can target the enemy unit
 	if (owner->weapons.empty())
 		return false;
 
-	// test if any weapon can target the enemy unit
 	for (CWeapon* w: owner->weapons) {
-		if (w->TestTarget(enemy->pos, SWeaponTarget(enemy)) &&
-			(owner->moveState != MOVESTATE_HOLDPOS || w->TryTargetRotate(enemy, false, false))) {
+		if (w->TestTarget(enemy->pos, SWeaponTarget(enemy)) && (owner->moveState != MOVESTATE_HOLDPOS || w->TryTargetRotate(enemy, false, false)))
 			return true;
-		}
 	}
 
 	return false;
@@ -655,7 +615,7 @@ void CMobileCAI::ExecuteGuard(Command& c)
 	const bool pushAttackCommand =
 		owner->unitDef->canAttack &&
 		(guardee->lastAttackFrame + 40 < gs->frameNum) &&
-		IsValidTarget(guardee->lastAttacker);
+		IsValidTarget(guardee->lastAttacker, nullptr);
 
 	if (pushAttackCommand) {
 		commandQue.push_front(Command(CMD_ATTACK, c.GetOpts(), guardee->lastAttacker->id));
@@ -725,7 +685,7 @@ void CMobileCAI::ExecuteObjectAttack(Command& c)
 
 	// tell weapons about the ordered target-unit
 	SWeaponTarget orderTgtInfo(orderTarget);
-	orderTgtInfo.isUserTarget = ((c.GetOpts() & INTERNAL_ORDER) == 0);
+	orderTgtInfo.isUserTarget = (!c.IsInternalOrder());
 	orderTgtInfo.isManualFire = (c.GetID() == CMD_MANUALFIRE);
 
 	const short targetHeading = GetHeadingFromVector(-targetMidPosVec.x, -targetMidPosVec.z);
@@ -826,7 +786,7 @@ void CMobileCAI::ExecuteGroundAttack(Command& c)
 	const float3 attackPos = c.GetPos(0);
 	const float3 attackVec = attackPos - owner->pos;
 	const short  attackHeading = GetHeadingFromVector(attackVec.x, attackVec.z);
-	const SWeaponTarget attackTgtInfo(attackPos, (c.GetOpts() & INTERNAL_ORDER) == 0);
+	const SWeaponTarget attackTgtInfo(attackPos, !c.IsInternalOrder());
 
 	if (c.GetID() == CMD_MANUALFIRE) {
 		assert(owner->unitDef->canManualFire);
@@ -916,7 +876,7 @@ void CMobileCAI::ExecuteAttack(Command& c)
 				// FIXME: don't call SetGoal() if target is already in range of some weapon?
 				SetGoal(tgtErrPos - tgtPosDir * CalcTargetRadius(targetUnit, targetUnit->radius, 1.0f), owner->pos);
 				SetOrderTarget(targetUnit);
-				owner->AttackUnit(targetUnit, (c.GetOpts() & INTERNAL_ORDER) == 0, c.GetID() == CMD_MANUALFIRE);
+				owner->AttackUnit(targetUnit, !c.IsInternalOrder(), c.GetID() == CMD_MANUALFIRE);
 
 				inCommand = true;
 			} break;
@@ -1033,74 +993,76 @@ void CMobileCAI::StopMoveAndKeepPointing(const float3& p, const float r, bool b)
 void CMobileCAI::BuggerOff(const float3& pos, float radius)
 {
 	if (radius < 0.0f) {
+		// AttachUnit call
 		lastBuggerOffTime = gs->frameNum - BUGGER_OFF_TTL;
 		return;
 	}
 
 	lastBuggerOffTime = gs->frameNum;
+	// numNonMovingCalls = 0;
+
 	buggerOffPos = pos;
 	buggerOffRadius = radius + owner->radius;
 }
 
 void CMobileCAI::NonMoving()
 {
+	// wait one SlowUpdate for more commands to enter the queue
+	// (so the bugger-off dir can be chosen more intelligently)
+	if (!commandQue.empty() && (++numNonMovingCalls) <= 1)
+		return;
+
 	if (owner->UsingScriptMoveType())
 		return;
 
 	if (lastBuggerOffTime <= (gs->frameNum - BUGGER_OFF_TTL))
 		return;
 
-	#if 0
-	float3 deltaPos = (owner->pos - buggerOffPos) * XZVector;
-	float3 buggerPos;
-
-	float buggerDist = deltaPos.Length();
-
-	if (buggerDist < 0.001f)
-		deltaPos = RgtVector * (buggerDist = 0.1f);
-	if (buggerDist >= buggerOffRadius)
-		return;
-	#endif
-
 	if (((owner->pos - buggerOffPos) * XZVector).SqLength() >= Square(buggerOffRadius * 1.5f))
 		return;
 
-	// pick a perimeter point and hope for the best
 	float3 buggerVec;
 	float3 buggerPos = -OnesVector;
 
-	for (int i = 0; i < 16 && !buggerPos.IsInMap(); i++) {
-		buggerVec = gsRNG.NextVector2D();
-		buggerPos = buggerOffPos + buggerVec.Normalize() * buggerOffRadius * 1.5f;
+	if (HasMoreMoveCommands()) {
+		size_t i = 0;
+		size_t j = 0;
+
+		for (i =     0; (i < commandQue.size() && !commandQue[i].IsMoveCommand()); i++) {}
+		for (j = i + 1; (j < commandQue.size() && !commandQue[j].IsMoveCommand()); j++) {}
+
+		if (i < commandQue.size() && j < commandQue.size()) {
+			buggerVec = commandQue[j].GetPos(0) - commandQue[i].GetPos(0);
+			buggerPos = buggerOffPos + buggerVec.Normalize() * buggerOffRadius * 1.25f;
+		}
+
+		// check if buggerPos is (still) reachable; aircraft
+		// (or all units) might want to ask the GBOM instead
+		if (owner->moveDef != nullptr && !owner->moveDef->TestMoveSquare(nullptr, buggerPos, buggerVec))
+			buggerPos = -OnesVector;
 	}
 
-	#if 0
-	if ((buggerPos.x == lastBuggerGoalPos.x) && (buggerPos.z == lastBuggerGoalPos.z)) {
-		// randomize; gradually increase the amplitude of the random factor (radius)
-		lastBuggerGoalPos.y += 32.0f;
-		lastBuggerGoalPos.x = buggerPos.x;
-		lastBuggerGoalPos.z = buggerPos.z;
-
-		buggerPos.x += (2.0f * lastBuggerGoalPos.y) * gsRNG.NextFloat() - lastBuggerGoalPos.y;
-		buggerPos.z += (2.0f * lastBuggerGoalPos.y) * gsRNG.NextFloat() - lastBuggerGoalPos.y;
-	} else {
-		lastBuggerGoalPos.y = 0.0f;
-		lastBuggerGoalPos.x = buggerPos.x;
-		lastBuggerGoalPos.z = buggerPos.z;
+	if (buggerPos.x == -1.0f) {
+		// pick a random perimeter point and hope for the best
+		for (int i = 0; i < 16 && !buggerPos.IsInMap(); i++) {
+			buggerVec = gsRNG.NextVector2D();
+			buggerPos = buggerOffPos + buggerVec.Normalize() * buggerOffRadius * 1.5f;
+		}
 	}
-	#endif
 
 	Command c(CMD_MOVE, buggerPos);
-	// c.SetOpts(INTERNAL_ORDER);
+	c.SetOpts(INTERNAL_ORDER);
 	c.SetTimeOut(gs->frameNum + BUGGER_OFF_TTL);
 	commandQue.push_front(c);
+
+	numNonMovingCalls = 0;
 }
 
 void CMobileCAI::FinishCommand()
 {
 	SetTransportee(nullptr);
 
-	if (!((commandQue.front()).GetOpts() & INTERNAL_ORDER))
+	if (!commandQue[0].IsInternalOrder())
 		lastUserGoal = owner->pos;
 
 	tempOrder = false;
@@ -1161,49 +1123,64 @@ bool CMobileCAI::GenerateAttackCmd()
 	if (owner->fireState == FIRESTATE_HOLDFIRE)
 		return false;
 
-	const float extraRange = 200.0f * owner->moveState * owner->moveState;
-	const float maxRangeSq = Square(owner->maxRange + extraRange);
+	float  extraRadius = 200.0f * owner->moveState * owner->moveState;
+	float searchRadius = owner->maxRange + extraRadius;
+
 	int newAttackTargetId = -1;
 
-	if (owner->curTarget.type == Target_Unit) {
-		//FIXME when is this the case (unit has target, but CAI doesn't !?)
-		if (owner->pos.SqDistance2D(owner->curTarget.unit->pos) < maxRangeSq)
-			newAttackTargetId = owner->curTarget.unit->id;
-	} else {
-		if (owner->lastAttacker != nullptr) {
-			const bool freshAttack = (gs->frameNum < (owner->lastAttackFrame + GAME_SPEED * 7));
-			const bool canChaseAttacker = !(owner->unitDef->noChaseCategory & owner->lastAttacker->category);
+	// pass bogus target-id and weapon-number s.t. script knows context and can set radius
+	if (!eventHandler.AllowWeaponTarget(owner->id, -1, -1, 0, &searchRadius))
+		return false;
 
-			if (freshAttack && canChaseAttacker) {
-				if (owner->pos.SqDistance2D(owner->lastAttacker->pos) < maxRangeSq) {
-					newAttackTargetId = owner->lastAttacker->id;
-				}
+	const SWeaponTarget& curTarget = owner->curTarget;
+
+	const CUnit* tgt = nullptr;
+	const CWeapon* wpn = owner->weapons[0];
+
+	if (curTarget.type == Target_Unit) {
+		//FIXME when is this the case (unit has target, but CAI doesn't !?)
+		const float tgtDistSq = owner->pos.SqDistance2D((tgt = curTarget.unit)->pos);
+		const float maxDistSq = Square(searchRadius);
+
+		if (tgtDistSq < maxDistSq)
+			if (eventHandler.AllowWeaponTarget(owner->id, tgt->id, wpn->weaponNum, wpn->weaponDef->id, nullptr))
+				newAttackTargetId = tgt->id;
+	} else {
+		if ((tgt = owner->lastAttacker) != nullptr) {
+			if (owner->pos.SqDistance2D(tgt->pos) < Square(searchRadius)) {
+				const bool allowAttackerChase = !(owner->unitDef->noChaseCategory & tgt->category);
+				const bool  keepAttackingLast = (gs->frameNum < (owner->lastAttackFrame + GAME_SPEED * 7));
+				const bool allowAttackingLast = (allowAttackerChase && keepAttackingLast && eventHandler.AllowWeaponTarget(owner->id, tgt->id, wpn->weaponNum, wpn->weaponDef->id, nullptr));
+
+				if (allowAttackingLast)
+					newAttackTargetId = tgt->id;
 			}
 		}
 
-		if (newAttackTargetId < 0 &&
-		    owner->fireState >= FIRESTATE_FIREATWILL && (gs->frameNum >= lastIdleCheck + 10)
-		) {
-			//Try getting target from weapons
+		if (newAttackTargetId < 0 && owner->fireState >= FIRESTATE_FIREATWILL && (gs->frameNum >= lastIdleCheck + 10)) {
+			// try getting target from weapons
 			for (CWeapon* w: owner->weapons) {
-				if (w->HaveTarget() || w->AutoTarget()) {
-					const auto t = w->GetCurrentTarget();
-					if (t.type == Target_Unit && IsValidTarget(t.unit)) {
-						newAttackTargetId = t.unit->id;
-						break;
-					}
-				}
+				const SWeaponTarget& wTgt = w->GetCurrentTarget();
+
+				// no current target, and nothing to auto-target
+				if (!w->HaveTarget() && !w->AutoTarget())
+					continue;
+				// maybe a current target, but invalid type or category etc
+				if (wTgt.type != Target_Unit || !IsValidTarget(wTgt.unit, w))
+					continue;
+				if (!eventHandler.AllowWeaponTarget(owner->id, wTgt.unit->id, w->weaponNum, w->weaponDef->id, nullptr))
+					continue;
+
+				newAttackTargetId = wTgt.unit->id;
+				break;
 			}
 
-			//Get target from wherever
+			// get target from wherever
 			if (newAttackTargetId < 0) {
-				const float leashRadius = 150.0f * owner->moveState * owner->moveState;
-				const float searchRadius = owner->maxRange + leashRadius;
+				tgt = CGameHelper::GetClosestValidTarget(owner->pos, searchRadius, owner->allyteam, this);
 
-				const CUnit* enemy = CGameHelper::GetClosestValidTarget(owner->pos, searchRadius, owner->allyteam, this);
-
-				if (enemy != nullptr)
-					newAttackTargetId = enemy->id;
+				if (tgt != nullptr && eventHandler.AllowWeaponTarget(owner->id, tgt->id, wpn->weaponNum, wpn->weaponDef->id, nullptr))
+					newAttackTargetId = tgt->id;
 			}
 		}
 	}
@@ -1250,14 +1227,9 @@ void CMobileCAI::StartSlowGuard(float speed) {
 	if (owner->moveType->GetMaxSpeed() < speed)
 		return;
 
-	const Command& c = (commandQue.size() > 1)? commandQue[1]: Command(CMD_STOP);
-
 	// when guarding, temporarily adopt the maximum
 	// (forward) speed of the guardee unit as our own
 	// WANTED maximum
-	if (c.GetID() != CMD_SET_WANTED_MAX_SPEED)
-		return;
-
 	owner->moveType->SetWantedMaxSpeed(speed);
 }
 
@@ -1318,7 +1290,7 @@ void CMobileCAI::ExecuteLoadUnits(Command& c)
 				return;
 			}
 
-			if (c.GetOpts() & INTERNAL_ORDER) {
+			if (c.IsInternalOrder()) {
 				if (unit->commandAI->commandQue.empty()) {
 					if (!LoadStillValid(unit)) {
 						StopMoveAndFinishCommand();

@@ -17,7 +17,7 @@
 #include "Rendering/Shaders/Shader.h"
 #include "Sim/Misc/TeamHandler.h"
 #include "System/Config/ConfigHandler.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/StringUtil.h"
 
 static std::array<const CMatrix44f, 128> dummyPieceMatrices;
@@ -148,9 +148,9 @@ bool UnitDrawerStateGLSL::Init(const CUnitDrawer* ud) {
 		modelShaders[n]->SetUniformLocation("shadowDensity");     // idx 21
 		modelShaders[n]->SetUniformLocation("shadowMatrix");      // idx 22
 		modelShaders[n]->SetUniformLocation("shadowParams");      // idx 23
-		// modelShaders[n]->SetUniformLocation("alphaPass");         // idx 24
-		modelShaders[n]->SetUniformLocation("gammaExponent");     // idx 24
-		modelShaders[n]->SetUniformLocation("fwdDynLights");      // idx 25
+		modelShaders[n]->SetUniformLocation("alphaTestCtrl");     // idx 24
+		modelShaders[n]->SetUniformLocation("gammaExponent");     // idx 25
+		modelShaders[n]->SetUniformLocation("fwdDynLights");      // idx 26
 
 		modelShaders[n]->Enable();
 		modelShaders[n]->SetUniform1i(0, 0); // diffuseTex  (idx 0, texunit 0)
@@ -177,8 +177,8 @@ bool UnitDrawerStateGLSL::Init(const CUnitDrawer* ud) {
 		modelShaders[n]->SetUniform1f(21, sunLighting->modelShadowDensity);
 		modelShaders[n]->SetUniformMatrix4fv(22, false, shadowHandler.GetShadowViewMatrixRaw());
 		modelShaders[n]->SetUniform4fv(23, shadowHandler.GetShadowParams());
-		// modelShaders[n]->SetUniform1f(24, 0.0f); // alphaPass
-		modelShaders[n]->SetUniform1f(24, globalRendering->gammaExponent);
+		modelShaders[n]->SetUniform4fv(24, float4{0.0f, 0.0f, 0.0f, 1.0f}); // alphaTestCtrl
+		modelShaders[n]->SetUniform1f(25, globalRendering->gammaExponent);
 		modelShaders[n]->Disable();
 		modelShaders[n]->Validate();
 	}
@@ -208,7 +208,7 @@ void UnitDrawerStateGLSL::Enable(const CUnitDrawer* ud, bool deferredPass, bool 
 
 	if (cLightHandler->NumConfigLights() > 0) {
 		mLightHandler->Update();
-		shader->SetUniform4fv(25, cLightHandler->NumUniformVecs(), cLightHandler->GetRawLightDataPtr());
+		shader->SetUniform4fv(26, cLightHandler->NumUniformVecs(), cLightHandler->GetRawLightDataPtr());
 	}
 
 	shader->SetUniform3fv(9, &fogParams.x);
@@ -217,7 +217,7 @@ void UnitDrawerStateGLSL::Enable(const CUnitDrawer* ud, bool deferredPass, bool 
 	shader->SetUniformMatrix4fv(8, false, camera->GetProjectionMatrix());
 	shader->SetUniformMatrix4fv(22, false, shadowHandler.GetShadowViewMatrixRaw());
 	shader->SetUniform4fv(23, shadowHandler.GetShadowParams());
-	shader->SetUniform1f(24, globalRendering->gammaExponent);
+	shader->SetUniform1f(25, globalRendering->gammaExponent);
 }
 
 void UnitDrawerStateGLSL::Disable(const CUnitDrawer* ud, bool deferredPass) {
@@ -247,9 +247,14 @@ void UnitDrawerStateGLSL::SetSkyLight(const ISkyLight* skyLight) const {
 }
 
 
+void UnitDrawerStateGLSL::SetAlphaTest(const float4& params) const {
+	assert(modelShaders[MODEL_SHADER_ACTIVE]->IsBound());
+	modelShaders[MODEL_SHADER_ACTIVE]->SetUniform4fv(24, params);
+}
+
 void UnitDrawerStateGLSL::SetTeamColor(int team, const float2 alpha) const {
 	assert(modelShaders[MODEL_SHADER_ACTIVE]->IsBound());
-	modelShaders[MODEL_SHADER_ACTIVE]->SetUniform4fv(14, std::move(GetTeamColor(team, alpha.x)));
+	modelShaders[MODEL_SHADER_ACTIVE]->SetUniform4fv(14, GetTeamColor(team, alpha.x));
 }
 
 void UnitDrawerStateGLSL::SetNanoColor(const float4& color) const {

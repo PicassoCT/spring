@@ -282,7 +282,7 @@ static inline void DrawUnitColVol(const CUnit* u, Shader::IProgramObject* s)
 
 			s->SetUniform4f(3, 0.0f, 0.0f, 0.6f, 0.35f);
 
-			DrawCollisionVolume(shieldColVol, s, m);
+			DrawCollisionVolume(shieldColVol, s, CMatrix44f{shieldWeapon->weaponMuzzlePos});
 		}
 
 		if (v->HasCustomType() || v->HasCustomProp(u->radius)) {
@@ -300,7 +300,7 @@ static inline void DrawUnitColVol(const CUnit* u, Shader::IProgramObject* s)
 
 class CDebugColVolQuadDrawer : public CReadMap::IQuadDrawer {
 public:
-	void ResetState() {
+	void ResetState() override {
 		unitIDs.clear();
 		unitIDs.reserve(32);
 		featureIDs.clear();
@@ -317,13 +317,11 @@ public:
 
 		glAttribStatePtr->PushBits(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT);
 		glAttribStatePtr->DisableCullFace();
-		glAttribStatePtr->DisableAlphaTest();
 
 		glAttribStatePtr->EnableBlendMask();
 		glAttribStatePtr->BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 		glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		glAttribStatePtr->LineWidth(2.0f);
 		glAttribStatePtr->EnableDepthMask();
 
 		gleBindMeshBuffers(&COLVOL_MESH_BUFFERS[0]);
@@ -331,14 +329,13 @@ public:
 	void Disable() {
 		gleBindMeshBuffers(nullptr);
 
-		glAttribStatePtr->LineWidth(1.0f);
 		glAttribStatePtr->PolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		glAttribStatePtr->PopBits();
 
 		ipo->Disable();
 	}
 
-	void DrawQuad(int x, int y) {
+	void DrawQuad(int x, int y) override {
 		const CQuadField::Quad& q = quadField.GetQuadAt(x, y);
 
 		for (const CUnit* u: q.units) {
@@ -380,8 +377,8 @@ namespace DebugColVolDrawer
 		const std::string& vsText = Shader::GetShaderSource("GLSL/ColVolDebugVertProg.glsl");
 		const std::string& fsText = Shader::GetShaderSource("GLSL/ColVolDebugFragProg.glsl");
 
-		Shader::GLSLShaderObject vsShaderObj = {GL_VERTEX_SHADER, vsText.c_str(), ""};
-		Shader::GLSLShaderObject fsShaderObj = {GL_FRAGMENT_SHADER, fsText.c_str(), ""};
+		Shader::GLSLShaderObject vsShaderObj = {GL_VERTEX_SHADER, vsText, ""};
+		Shader::GLSLShaderObject fsShaderObj = {GL_FRAGMENT_SHADER, fsText, ""};
 
 		cvShader.AttachShaderObject(&vsShaderObj);
 		cvShader.AttachShaderObject(&fsShaderObj);

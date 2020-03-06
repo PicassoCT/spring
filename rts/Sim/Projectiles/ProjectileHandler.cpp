@@ -28,7 +28,7 @@
 #include "System/Config/ConfigHandler.h"
 #include "System/EventHandler.h"
 #include "System/Log/ILog.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/TimeProfiler.h"
 
 
@@ -37,8 +37,8 @@
 #define HIGH_NANO_PRIO 1.0f
 
 
-CONFIG(int, MaxParticles).defaultValue(10000).headlessValue(1).minimumValue(1);
-CONFIG(int, MaxNanoParticles).defaultValue(2000).headlessValue(1).minimumValue(1);
+CONFIG(int, MaxParticles).defaultValue(10000).headlessValue(0).minimumValue(0);
+CONFIG(int, MaxNanoParticles).defaultValue(2000).headlessValue(0).minimumValue(0);
 
 
 CR_BIND(CProjectileHandler, )
@@ -414,11 +414,6 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 
 	ASSERT_SYNCED(freeIDs.size());
 	ASSERT_SYNCED(p->id);
-
-	#ifdef TRACE_SYNC
-	tracefile << "New projectile id: " << p->id << ", ownerID: " << p->GetOwnerID();
-	tracefile << ", type: " << p->GetProjectileType() << " pos: <" << p->pos.x << ", " << p->pos.y << ", " << p->pos.z << ">\n";
-	#endif
 }
 
 
@@ -426,27 +421,39 @@ void CProjectileHandler::AddProjectile(CProjectile* p)
 
 static bool CheckProjectileCollisionFlags(const CProjectile* p, const CUnit* u)
 {
-	if (teamHandler.IsValidAllyTeam(p->GetAllyteamID())) {
-		const bool noFriendsBit = ((p->GetCollisionFlags() & Collision::NOFRIENDLIES) != 0);
-		const bool noEnemiesBit = ((p->GetCollisionFlags() & Collision::NOENEMIES   ) != 0);
-		const bool friendlyFire = teamHandler.AlliedAllyTeams(p->GetAllyteamID(), u->allyteam);
+	const unsigned int collFlags = p->GetCollisionFlags() * p->weapon;
 
-		if (noFriendsBit && friendlyFire)
-			return false;
-
-		if (noEnemiesBit && !friendlyFire)
-			return false;
-	}
-
-	if ((p->GetCollisionFlags() & Collision::NONEUTRALS) != 0 && u->IsNeutral())
+	// only weapon-projectiles can have non-zero flags
+	if (collFlags == 0)
 		return false;
 
-	if ((p->GetCollisionFlags() & Collision::NOFIREBASES) != 0) {
+	// disregard everything else when this bit is set
+	// (ground and feature flags are tested elsewhere)
+	if ((collFlags & Collision::NONONTARGETS) != 0)
+		return (static_cast<const CWeaponProjectile*>(p)->GetTargetObject() == u);
+
+	if ((collFlags & Collision::NOCLOAKED) != 0 && u->IsCloaked())
+		return false;
+	if ((collFlags & Collision::NONEUTRALS) != 0 && u->IsNeutral())
+		return false;
+
+	if ((collFlags & Collision::NOFIREBASES) != 0) {
 		const CUnit* owner = p->owner();
 		const CUnit* trans = (owner != nullptr)? owner->GetTransporter(): nullptr;
 
 		// check if the unit being collided with is occupied by p's owner
 		if (u == trans && trans->unitDef->isFirePlatform)
+			return false;
+	}
+
+	if (teamHandler.IsValidAllyTeam(p->GetAllyteamID())) {
+		const bool noFriendsBit = ((collFlags & Collision::NOFRIENDLIES) != 0);
+		const bool noEnemiesBit = ((collFlags & Collision::NOENEMIES   ) != 0);
+		const bool friendlyFire = teamHandler.AlliedAllyTeams(p->GetAllyteamID(), u->allyteam);
+
+		if (noFriendsBit && friendlyFire)
+			return false;
+		if (noEnemiesBit && !friendlyFire)
 			return false;
 	}
 
@@ -563,8 +570,6 @@ void CProjectileHandler::CheckShieldCollisions(
 		if (!repulser->CanIntercept(interceptType, projAllyTeam))
 			continue;
 
-		CUnit* owner = repulser->owner;
-
 		// we sometimes get false inside hits due to the movement of the shield
 		// a very hacky solution is to nudge the start of the intersecting ray
 		// back (proportional to how far the shield moved last frame) so as to
@@ -573,11 +578,14 @@ void CProjectileHandler::CheckShieldCollisions(
 		// solution (keep track in the projectile which shields it's in)
 		const float3 rpvec  = ppos0 - ppos1;
 		const float3 rppos0 = ppos0 + rpvec * repulser->GetDeltaDist();
+		const float3 cvpos  = repulser->weaponMuzzlePos - repulser->owner->relMidPos;
 
-		if (!CCollisionHandler::DetectHit(owner, &repulser->collisionVolume, owner->GetTransformMatrix(true), rppos0, ppos1, &cq))
+		// shield volumes are always spherical, transform directly
+		// (CollisionHandler will cancel out the relmidpos offset)
+		if (!CCollisionHandler::DetectHit(repulser->owner, &repulser->collisionVolume, CMatrix44f{cvpos}, rppos0, ppos1, &cq))
 			continue;
 
-		if (cq.InsideHit() && repulser->weaponDef->exteriorShield && !repulser->IsRepulsing(wpro))
+		if (cq.InsideHit() && repulser->IgnoreInteriorHit(wpro))
 			continue;
 
 		if (repulser->IncomingProjectile(wpro, cq.GetHitPos()))
@@ -705,7 +713,7 @@ void CProjectileHandler::AddNanoParticle(
 	dif += (guRNG.NextVector() * 0.15f);
 
 	const     float3 udColor = unitDef->nanoColor;
-	constexpr float  udAlpha = 20 / 256.0f; // denom=255 is not constexpr-able
+	constexpr float  udAlpha = 64.0f / 256.0f; // denom=255 is not constexpr-able
 
 	const     uint8_t* tColor = (teamHandler.Team(teamNum))->color;
 	constexpr uint8_t  tAlpha = udAlpha * 256;
@@ -742,7 +750,7 @@ void CProjectileHandler::AddNanoParticle(
 	dif += (guRNG.NextVector() * (radius / len));
 
 	const     float3 udColor = unitDef->nanoColor;
-	constexpr float  udAlpha = 20 / 256.0f;
+	constexpr float  udAlpha = 64.0f / 256.0f;
 
 	const     uint8_t* tColor = (teamHandler.Team(teamNum))->color;
 	constexpr uint8_t  tAlpha = udAlpha * 256;
@@ -783,10 +791,16 @@ CProjectile* CProjectileHandler::GetProjectileByUnsyncedID(int id)
 
 float CProjectileHandler::GetParticleSaturation(bool randomized) const
 {
+	const int curParticles = GetCurrentParticles();
+
 	// use the random mult to weaken the max limit a little
 	// so the chance is better spread when being close to the limit
 	// i.e. when there are rockets that spam CEGs this gives smaller CEGs still a chance
-	return (GetCurrentParticles() / float(maxParticles)) * (1.0f + int(randomized) * 0.3f * guRNG.NextFloat());
+	const float total = std::max(1.0f, maxParticles * 1.0f);
+	const float fract = std::max(int(curParticles >= maxParticles), curParticles) / total;
+	const float rmult = 1.0f + (int(randomized) * 0.3f * guRNG.NextFloat());
+
+	return (fract * rmult);
 }
 
 int CProjectileHandler::GetCurrentParticles() const

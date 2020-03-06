@@ -16,7 +16,7 @@
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitHandler.h"
 #include "System/Log/ILog.h"
-#include "System/myMath.h"
+#include "System/SpringMath.h"
 #include "System/StringHash.h"
 #include "System/UnorderedSet.hpp"
 
@@ -42,7 +42,7 @@ std::string CSelectionKeyHandler::ReadToken(std::string& str)
 std::string CSelectionKeyHandler::ReadDelimiter(std::string& str)
 {
 	std::string ret = str.substr(0, 1);
-	if (str.size() >= 1) {
+	if (!str.empty()) {
 		str = str.substr(1, std::string::npos);
 	} else {
 		str = "";
@@ -69,7 +69,7 @@ namespace {
 			return map;
 		}
 
-		virtual ~Filter() {}
+		virtual ~Filter() = default;
 
 		/// Called immediately before the filter is used.
 		virtual void Prepare() {}
@@ -116,10 +116,10 @@ namespace {
 	DECLARE_FILTER(Aircraft, unit->unitDef->IsAirUnit())
 	DECLARE_FILTER(Weapons, !unit->weapons.empty())
 	DECLARE_FILTER(Idle, unit->commandAI->commandQue.empty())
-	DECLARE_FILTER(Waiting, !unit->commandAI->commandQue.empty() &&
-	               (unit->commandAI->commandQue.front().GetID() == CMD_WAIT))
-	DECLARE_FILTER(InHotkeyGroup, unit->group != nullptr)
-	DECLARE_FILTER(Radar, unit->radarRadius || unit->sonarRadius || unit->jammerRadius)
+	DECLARE_FILTER(Waiting, !unit->commandAI->commandQue.empty() && (unit->commandAI->commandQue.front().GetID() == CMD_WAIT))
+	DECLARE_FILTER(InHotkeyGroup, unit->GetGroup() != nullptr)
+	DECLARE_FILTER(Radar, (unit->radarRadius > 0 || unit->sonarRadius > 0))
+	DECLARE_FILTER(Jammer, (unit->jammerRadius > 0))
 	DECLARE_FILTER(ManualFireUnit, unit->unitDef->canManualFire)
 
 	DECLARE_FILTER_EX(WeaponRange, 1, unit->maxRange > minRange,
